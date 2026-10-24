@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/hero.svg" width="100%" alt="GGTools for ComfyUI: Boolean Fast Muter (ggtools) connects an image source and a Boolean to an optional image input.">
+  <img src="assets/readme/hero.svg" width="100%" alt="GGTools for ComfyUI: a parent toggle controls Boolean Fast Muter (ggtools) inside a subgraph. False passes the image; true bypasses it.">
 </p>
 
 # GGTools for ComfyUI
@@ -14,6 +14,10 @@ An image when you need it, no connection when you don't. Use the local Boolean t
 | --- | --- |
 | `true` | Bypass is active: the controlled image connection is omitted. |
 | `false` | No bypass: the image passes through from the first connected target. |
+
+![Boolean Fast Muter comparison: false passes the image in the top example; true mutes the Background Image node in the bottom example.](assets/bypass-example.png)
+
+**Top — `false`:** the Background Image node stays enabled and supplies the image. **Bottom — `true`:** the source node is visibly muted, and its connection is omitted from the queued prompt.
 
 Outside subgraphs, target nodes update while you edit the workflow, within about 100 ms. Inside subgraphs, routing is resolved separately for each instance when the prompt is serialized. The output follows the target's type, including when connected to **Any Switch (rgthree)**. An unresolved target stays generic.
 
