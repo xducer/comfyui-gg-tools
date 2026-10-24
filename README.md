@@ -86,23 +86,12 @@ git pull --ff-only
 Restart ComfyUI and refresh the browser after updating.
 
 <details>
-<summary>Development and verification</summary>
+<summary>Implementation details</summary>
 
 The pack registers its frontend files through `__init__.py`. Node behavior lives in `web/boolean_fast_muter.js`; Python runtime dependencies are empty in `pyproject.toml`, so there is no `requirements.txt`.
-
-Run these checks from the **ComfyUI root**, with Node.js 24 or later:
-
-```sh
-node custom_nodes/comfyui-ggtools/tests/muter.test.mjs
-node custom_nodes/comfyui-ggtools/tests/frontend.integration.mjs
-```
-
-The behavior tests include rgthree's installed type-inference helper, so that test suite expects a sibling `custom_nodes/rgthree-comfy` checkout. The integration check reads source maps from the installed ComfyUI frontend package in the root's `venv` directory and exercises its actual serializer, virtual-node resolver, and subgraph traversal. It covers non-image types, promoted toggles, independent instances, nested subgraph targets, collectors, competing controllers, and connection loops.
-
-The node has also been tested interactively by the repository owner, including Boolean control, image output, and live muting.
 
 </details>
 
 ## Credits
 
-Inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy). GGTools installs separately so updates to other node packs do not overwrite it.
+Inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy).
