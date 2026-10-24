@@ -19,7 +19,7 @@ An image when you need it, no connection when you don't. Use the local Boolean t
 
 **Top — `false`:** the Background Image node stays enabled and supplies the image. **Bottom — `true`:** the source node is visibly muted, and its connection is omitted from the queued prompt.
 
-Outside subgraphs, target nodes update while you edit the workflow, within about 100 ms. Inside subgraphs, routing is resolved separately for each instance when the prompt is serialized. The output follows the target's type, including when connected to **Any Switch (rgthree)**. An unresolved target stays generic.
+Outside subgraphs, target nodes update while you edit the workflow, within about 100 ms. Inside subgraphs, routing is resolved separately for each instance when the prompt is serialized. The output follows the target's type. An unresolved target stays generic.
 
 Targets can also carry masks, latents, conditioning, models, CLIP, VAE, audio, or scalar values. Routing preserves the source output socket; `OPT_CONNECTION` forwards only the first connected target. Additional targets share the same Boolean control.
 
@@ -67,10 +67,10 @@ The image must pass through the muter’s output; connecting only the Boolean do
 
 ### Supported use
 
-- Works as a standalone frontend extension; rgthree is not required to use the node.
+- Works as a standalone frontend extension.
 - The local toggle, built-in Boolean constants, Boolean primitives, and exposed parent subgraph toggles are supported. Values calculated during execution are not supported.
 - A parent subgraph Boolean toggle and incoming image can feed the muter through the subgraph’s input slots.
-- Target connections can pass through reroutes and rgthree Node Collectors or Node Combiners; their upstream nodes are controlled together.
+- Target connections can pass through reroutes and Node Collectors or Node Combiners; their upstream nodes are controlled together.
 - Targeting a nested subgraph also suppresses its descendants, including output nodes, within that instance. Disabling the outer bypass preserves inner controls.
 - Outside subgraphs, muting a source affects all its outputs. Each muter still closes its own output when its Boolean is `true`, even if another controller enables the source.
 - A required socket still needs a value. Widget-backed scalar inputs may use their local value when a connected source is bypassed.
