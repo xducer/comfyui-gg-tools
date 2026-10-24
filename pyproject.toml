@@ -1,0 +1,9 @@
+[project]
+name = "comfyui-ggtools"
+version = "0.1.0"
+description = "Practical workflow tools for ComfyUI, starting with Boolean Fast Muter."
+readme = "README.md"
+dependencies = []
+
+[tool.comfy]
+DisplayName = "GGTools"
