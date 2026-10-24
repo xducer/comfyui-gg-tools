@@ -34,12 +34,12 @@ function booleanConstant(node) {
 
 class BooleanFastMuter extends LGraphNode {
     static title = `${NODE_TYPE} (ggtools)`;
-    static category = "ggtools";
 
     constructor() {
         super(BooleanFastMuter.title);
         this.isVirtualNode = true;
         this.serialize_widgets = true;
+        this.muted = new Set();
         this.addInput("target", "*");
         this.addInput("boolean", "BOOLEAN", { widget: { name: "boolean" } });
         const { widget } = ComfyWidgets.BOOLEAN(this, "boolean", ["BOOLEAN", { default: false }], app);
@@ -49,11 +49,16 @@ class BooleanFastMuter extends LGraphNode {
     }
 
     onAdded() {
-        this.refreshTimer = setInterval(() => this.syncState(), 100);
+        this.refreshTimer = setInterval(() => {
+            if (this.graph && this.updateTargetNames()) this.updateTargetSockets();
+            this.syncState();
+        }, 100);
     }
 
     onRemoved() {
         clearInterval(this.refreshTimer);
+        // Loading a workflow clears the old graph; only a real removal gives control back.
+        if (!app.configuringGraph) this.release();
     }
 
     onConnectionsChange(type) {
@@ -83,33 +88,37 @@ class BooleanFastMuter extends LGraphNode {
         if (this.title === NODE_TYPE) this.title = BooleanFastMuter.title;
         this.inputs[1].name = "boolean";
         this.inputs[1].widget = { name: "boolean" };
-        if (!this.outputs?.some((output) => output.name === "OPT_CONNECTION")) {
-            this.addOutput("OPT_CONNECTION", 0);
-        }
         this.scheduleTargetSockets();
     }
 
     updateTargetSockets() {
         if (!this.graph) return;
-        const targets = this.inputs.filter((input, index) => index !== 1);
-        for (const input of targets.slice(0, -1).reverse()) {
-            if (input.link == null) {
-                const index = this.inputs.indexOf(input);
-                // Keep the first target slot before the Boolean widget.
-                if (index !== 0) this.removeInput(index);
-            }
+        // Keep one empty target: the first slot (before the Boolean widget) when it is free, otherwise a spare at the end.
+        for (let index = this.inputs.length - 1; index > 1; index--) {
+            const spare = index === this.inputs.length - 1 && this.inputs[0].link != null;
+            if (this.inputs[index].link == null && !spare) this.removeInput(index);
         }
-        for (const input of this.inputs.filter((input, index) => index !== 1)) {
-            const link = this.graph.links[input.link];
-            const target = link && this.graph.getNodeById(link.origin_id);
-            input.name = target?.title || (link?.originIsIoNode ? this.graph.inputs[link.origin_slot]?.name : undefined) || "target";
-        }
-        const lastTarget = this.inputs.filter((input, index) => index !== 1).at(-1);
-        if (lastTarget.link != null) this.addInput("target", "*");
+        this.updateTargetNames();
+        if (!this.inputs.some((input, index) => index !== 1 && input.link == null)) this.addInput("target", "*");
         const size = this.computeSize();
         size[0] = Math.max(this.size[0], size[0]);
         this.setSize(size);
         this.graph.setDirtyCanvas(true, true);
+    }
+
+    updateTargetNames() {
+        let changed = false;
+        for (const input of this.inputs.filter((input, index) => index !== 1)) {
+            const link = this.graph.links[input.link];
+            const target = link && this.graph.getNodeById(link.origin_id);
+            const boundary = link?.originIsIoNode ? this.graph.inputs[link.origin_slot] : undefined;
+            const name = target?.title || boundary?.label || boundary?.name || "target";
+            if (input.name !== name) {
+                input.name = name;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     getInputLink(slot) {
@@ -166,7 +175,8 @@ class BooleanFastMuter extends LGraphNode {
     }
 
     syncState(strict = false) {
-        if (!this.graph || app.configuringGraph || this.mode === 2 || this.mode === 4) return;
+        if (!this.graph || app.configuringGraph) return;
+        if (this.mode === 2 || this.mode === 4) return this.release();
         if (this.graph.rootGraph !== this.graph) {
             this.updateOutputType();
             return;
@@ -176,15 +186,31 @@ class BooleanFastMuter extends LGraphNode {
         if (value === undefined) return;
         let changed = widget.value !== value;
         if (changed) widget.value = value;
-        for (const target of this.controlledNodes()) {
-            const mode = value ? 2 : 0;
+        const targets = this.controlledNodes();
+        const mode = value ? 2 : 0;
+        for (const target of targets) {
             if (target.mode !== mode) {
                 target.mode = mode;
                 changed = true;
             }
         }
+        if (this.release(targets)) changed = true;
+        if (value) this.muted = new Set(targets);
         this.updateOutputType();
         if (changed) this.graph.setDirtyCanvas(true, true);
+    }
+
+    // Unmute nodes this muter muted but no longer controls, unless the user changed them since.
+    release(keep = []) {
+        let changed = false;
+        for (const node of this.muted) {
+            if (keep.includes(node) || node.mode !== 2) continue;
+            node.mode = 0;
+            changed = true;
+        }
+        this.muted.clear();
+        if (changed) this.graph?.setDirtyCanvas(true, true);
+        return changed;
     }
 
     updateOutputType() {
@@ -249,21 +275,6 @@ class BooleanFastMuter extends LGraphNode {
 
 app.registerExtension({
     name: "local.BooleanFastMuter",
-    beforeConfigureGraph(graphData) {
-        for (const node of graphData.nodes || []) {
-            if (node.type !== NODE_TYPE || node.inputs?.[0]?.name !== "enabled") continue;
-            [node.inputs[0], node.inputs[1]] = [node.inputs[1], node.inputs[0]];
-            node.inputs[1].name = "boolean";
-            node.inputs[1].widget = { name: "boolean" };
-            for (const link of graphData.links || []) {
-                if (Array.isArray(link)) {
-                    if (link[3] === node.id && link[4] < 2) link[4] = 1 - link[4];
-                } else if (link.target_id === node.id && link.target_slot < 2) {
-                    link.target_slot = 1 - link.target_slot;
-                }
-            }
-        }
-    },
     nodeCreated(node) {
         if (!node.isSubgraphNode()) return;
         const getInnerNodes = node.getInnerNodes;

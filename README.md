@@ -1,121 +1,74 @@
-<p align="center">
-  <img src="assets/readme/hero.svg" width="100%" alt="GGTools for ComfyUI: a parent toggle controls a connection inside a subgraph. False includes the connection; true bypasses it.">
-</p>
-
 # GGTools for ComfyUI
 
-Practical custom nodes for controlling ComfyUI workflows. **Boolean Fast Muter (ggtools)** adds Boolean control to data connections and groups of target nodes.
+Frontend-only nodes for keeping large ComfyUI workflows tidy and switchable. No Python packages or extra requirements.
 
-## Boolean Fast Muter (ggtools)
-
-Enable or bypass a connection without rewiring your workflow. Use the local toggle, connect a Boolean control, or expose the toggle on a parent subgraph node.
-
-The node preserves the source's connection type and output socket without converting its data. Common connection types include:
-
-| Data | Connection types |
+| Node | What it does |
 | --- | --- |
-| Models and encoders | `MODEL`, `CLIP`, `VAE` |
-| Conditioning | `CONDITIONING` |
-| Latents and audio | `LATENT`, `AUDIO` |
-| Images and masks | `IMAGE`, `MASK` |
-| Scalar values | `INT`, `FLOAT`, `BOOLEAN`, `STRING` |
+| **Pipe To / Pipe From (ggtools)** | Send connections anywhere in the workflow, including into and out of subgraphs, without wires. |
+| **Boolean Fast Muter (ggtools)** | Switch a connection, or a group of source nodes, on and off with a Boolean. |
 
-| Control | Result |
+Both are under **Add Node → ggtools**.
+
+## Pipe To and Pipe From
+
+![Load Checkpoint feeds model and clip into Pipe To. With no wire between them, a Pipe From set to that pipe sends model to a KSampler and clip to a CLIP Text Encode.](assets/pipes_example_01.png)
+
+1. Connect anything to **Pipe To (ggtools)**. Each connection becomes a named entry, and a spare `connect anything` input appears for the next one.
+2. Add **Pipe From (ggtools)** anywhere, on the main canvas or inside a subgraph, and pick the Pipe To in its `pipe` dropdown, for example `Pipe #12 — Main canvas`.
+3. Connect the outputs you need.
+
+Entries are named automatically, and renames show up straight away:
+
+| Source | Entry name |
 | --- | --- |
-| `true` | Bypass is active: the controlled connection is omitted from the execution prompt. |
-| `false` | No bypass: data passes through from the first connected target. |
+| A named output, such as Get Image Size | `width`, `height` |
+| A KJNodes Get or Set node | its variable, such as `Image_BG` |
+| A source that also feeds another node's input or a Set node | that input's name or the Set variable, such as `positive` or `Clip_Base` |
+| Anything else | the type, such as `model`, `clip`, then `model_2` for a second one |
 
-New nodes default to `false`.
+If you rename the node, your title leads and the source's own name follows in brackets, unless the title already contains it: `Background size [width]`, `Genode for Clip [Clip_Base]`, `Encode Load Image [latent]`. Renaming an output slot or a subgraph input names the value directly.
 
-Outside subgraphs, target nodes update while you edit the workflow, within about 100 ms. Inside subgraphs, routing is resolved separately for each instance when the prompt is serialized. An unresolved connection type stays generic.
+- Any connection type works, and several Pipe To and Pipe From nodes can share a workflow. A new Pipe From selects the Pipe To automatically when there is only one.
+- Inside a subgraph, **This instance** reads the Pipe To in the same copy of the subgraph, so each copy of a reused subgraph sends its own values.
+- Pipes keep working through copy and paste, cut and paste, Convert to Subgraph and unpacking. A Pipe To copied together with its Pipe From becomes a new, independent pair.
+- Switching a Pipe From to another pipe keeps the connections whose name and type exist on the new pipe. Anything else, including an entry removed from the Pipe To, is marked `(missing)` rather than silently fed a different value.
 
-### Example: optional image input
+When you queue, each used output becomes an ordinary link to the original source, and the pipe nodes never reach the server. Unused outputs are ignored. If a muted or bypassed source leaves an entry empty, the receiving input is left unconnected, as if it were wired directly. A used output whose pipe was deleted stops the queue with an error naming the Pipe From.
 
-This example uses an image connection; the same control applies to the other connection types above.
+## Boolean Fast Muter
 
-![Boolean Fast Muter comparison: false passes the image in the top example; true mutes the Background Image node in the bottom example.](assets/bypass-example.png)
+![Two copies of the same setup. With false, Load Image runs and its image passes through the muter to VAE Encode. With true, Load Image is muted and the connection is left out.](assets/bypass_example_01.png)
 
-**Top — `false`:** the source stays enabled and supplies the image. **Bottom — `true`:** the source is muted, and its connection is omitted from the queued prompt.
+Connect a source node's output to `target`, then connect `OPT_CONNECTION` to the input it should feed.
 
-### Optional inputs and default values
+| `boolean` | Result |
+| --- | --- |
+| `false` (default) | The source runs and its output passes through. |
+| `true` | The source is muted and the connection is left out of the queued prompt. |
 
-Bypassing removes a connection when ComfyUI builds the execution prompt. This gives the receiving node an absent connection, rather than a connected source returning `None`.
+- Use the toggle on the node, or connect a Boolean constant or primitive. Values calculated during execution are not supported.
+- Connect several targets to switch them together. `OPT_CONNECTION` forwards the first connected target. Targets can sit behind reroutes, collectors or combiners.
+- Disconnecting a target, deleting the muter or bypassing it re-enables what it muted.
+- A left-out connection is absent, not `None`. Optional inputs take their no-input path and widget inputs fall back to their own value. A required input still fails with `Required input is missing`.
 
-What happens next depends on the receiving input:
+### Controlling a subgraph from outside
 
-- **Optional socket:** the receiving node can use its no-input path.
-- **Widget-backed input:** it may fall back to its local value, such as a number, text, or Boolean setting.
-- **Required socket without a fallback:** it still needs a value. Bypassing a required model, latent, or other input can cause `Required input is missing`.
+![Inside a subgraph, an input passes through Boolean Fast Muter. A Boolean subgraph input drives the muter, so the parent subgraph node shows the toggle on the main canvas.](assets/readme/hero.svg)
 
-Connection-type compatibility does not make a required input optional.
+Put the muter inside the subgraph, route the incoming data through it, and wire a Boolean subgraph input to its `boolean` socket. The toggle then appears on the parent subgraph node, and each copy of the subgraph can have its own value. Use one muter per subgraph input you want to switch independently.
 
 ## Install
 
-Clone into your ComfyUI `custom_nodes` directory using a GitHub account with access to this private repository:
+The repository is private. Clone it with an account that has access:
 
 ```sh
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/xducer/comfyui-ggtools.git
 ```
 
-Restart ComfyUI and refresh the browser. No extra Python packages or `pip install` step are needed.
+Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-ggtools`, then restart and refresh.
 
-## Connect
+## Notes
 
-1. Add **Boolean Fast Muter (ggtools)** from `ggtools`.
-2. Connect the output you want to control to a `target` socket. A spare socket appears for additional targets.
-3. Use the `boolean` toggle or connect a Boolean control to its input socket.
-4. Connect `OPT_CONNECTION` to a compatible receiving input. Outside subgraphs, the controlled source can also remain connected directly to its consumers.
-
-Disconnecting the external Boolean returns control to the local toggle. Multiple targets can be controlled together through reroutes, collectors, or combiners. Outside subgraphs, muting a source affects all its outputs; each muter still closes its own output when its Boolean is `true`, even if another controller enables the source.
-
-### Multiple target inputs
-
-Connecting a target adds another spare socket so one Boolean can control several target nodes together:
-
-- **`true`:** all connected target nodes are muted.
-- **`false`:** all connected target nodes are enabled.
-- **`OPT_CONNECTION`:** forwards only the **first connected target's output**. Additional targets are controlled, but their values are not combined or selected by this output.
-
-For example, connect MODEL, CLIP, and VAE producers to control all three together. If MODEL is the first connected target, `OPT_CONNECTION` forwards that MODEL output.
-
-**Exposed subgraph inputs are connections, rather than local target nodes.** Only the first connected input is routed through `OPT_CONNECTION`; additional incoming sockets do not provide separate routing or mute the parent sources. Use one muter per independently routed subgraph input. The same Boolean can feed several muters when they should switch together.
-
-### Controlling subgraph inputs from the outside
-
-Keep the routing inside a reusable subgraph and expose its control on the main canvas:
-
-1. Place **Boolean Fast Muter (ggtools)** inside the subgraph.
-2. Connect the incoming data to `target`, then connect `OPT_CONNECTION` to the inputs you want to control.
-3. Add a Boolean input to the subgraph, for example **Bypass reference ?**, and wire it to the muter's `boolean` socket. The parent subgraph node exposes the toggle.
-4. Toggle it from the main canvas: `true` omits the controlled connection; `false` includes it when queuing.
-
-The data must pass through the muter's output; connecting only the Boolean does not control a data path. Incoming data is gated within that instance, so other uses of the parent source stay connected. Multiple instances of the same subgraph can use different toggle values.
-
-### Supported use
-
-- Works as a standalone frontend extension.
-- The local toggle, built-in Boolean constants, Boolean primitives, and exposed parent subgraph toggles are supported. Values calculated during execution are not supported.
-- Target connections can pass through reroutes, collectors, or combiners; their upstream nodes are controlled together.
-- Targeting a nested subgraph also suppresses its descendants, including output nodes, within that instance. Disabling the outer bypass preserves inner controls.
-- Already queued prompts are unaffected. API-only submissions do not run this frontend node.
-
-## Update
-
-```sh
-cd /path/to/ComfyUI/custom_nodes/comfyui-ggtools
-git pull --ff-only
-```
-
-Restart ComfyUI and refresh the browser after updating.
-
-<details>
-<summary>Implementation details</summary>
-
-The pack registers its frontend files through `__init__.py`. Node behavior lives in `web/boolean_fast_muter.js`; Python runtime dependencies are empty in `pyproject.toml`, so there is no `requirements.txt`.
-
-</details>
-
-## Credits
-
-Inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy).
+- The nodes act in the browser when it builds the prompt. **Export (API)** includes their effect, but an exported prompt does not change if you toggle afterwards, and prompts already queued are unaffected.
+- Boolean Fast Muter is inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy).
