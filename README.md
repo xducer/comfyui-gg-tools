@@ -52,6 +52,7 @@ Connect a source node's output to `target`, then connect `OPT_CONNECTION` to the
 
 - Use the toggle on the node, or connect a Boolean constant or primitive. Values calculated during execution are not supported.
 - Connect several targets to switch them together. `OPT_CONNECTION` forwards the first connected target. Targets can sit behind reroutes, collectors or combiners.
+- Several muters can control the same node, including muters connected to another muter's `target`. The node stays muted while any of them is `true`.
 - Disconnecting a target, deleting the muter or bypassing it re-enables what it muted.
 - A left-out connection is absent, not `None`. Optional inputs take their no-input path and widget inputs fall back to their own value. A required input still fails with `Required input is missing`.
 

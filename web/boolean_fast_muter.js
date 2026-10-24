@@ -2,6 +2,8 @@ import { app } from "../../../scripts/app.js";
 
 const { ComfyWidgets } = window.comfyAPI.widgets;
 const NODE_TYPE = "Boolean Fast Muter";
+// Muter DTOs controlling each execution DTO; DTOs are rebuilt for every prompt.
+const controllers = new WeakMap();
 
 function inputNodes(node) {
     const nodes = [];
@@ -26,8 +28,10 @@ function isInputAncestor(node, ancestor) {
     return false;
 }
 
+const BOOLEAN_CONSTANTS = ["easy boolean", "PrimitiveBoolean", "PrimitiveNode"];
+
 function booleanConstant(node) {
-    if (!["easy boolean", "PrimitiveBoolean", "PrimitiveNode"].includes(node?.type)) return;
+    if (!BOOLEAN_CONSTANTS.includes(node?.type)) return;
     if (node.inputs.some((input) => input.name === "value" && input.link != null)) return;
     return node.widgets.find((widget) => widget.name === "value")?.value;
 }
@@ -188,8 +192,9 @@ class BooleanFastMuter extends LGraphNode {
         if (changed) widget.value = value;
         const targets = this.controlledNodes();
         const mode = value ? 2 : 0;
+        const kept = value ? new Set() : this.mutedByOthers();
         for (const target of targets) {
-            if (target.mode !== mode) {
+            if (target.mode !== mode && !kept.has(target)) {
                 target.mode = mode;
                 changed = true;
             }
@@ -200,11 +205,22 @@ class BooleanFastMuter extends LGraphNode {
         if (changed) this.graph.setDirtyCanvas(true, true);
     }
 
+    // A node stays muted while any active muter controlling it is true.
+    mutedByOthers() {
+        const muted = new Set();
+        for (const other of this.graph?.nodes || []) {
+            if (other === this || other.type !== NODE_TYPE || other.mode === 2 || other.mode === 4) continue;
+            if (other.getRootBoolean() === true) for (const node of other.controlledNodes()) muted.add(node);
+        }
+        return muted;
+    }
+
     // Unmute nodes this muter muted but no longer controls, unless the user changed them since.
     release(keep = []) {
         let changed = false;
+        const kept = this.muted.size ? this.mutedByOthers() : new Set();
         for (const node of this.muted) {
-            if (keep.includes(node) || node.mode !== 2) continue;
+            if (keep.includes(node) || kept.has(node) || node.mode !== 2) continue;
             node.mode = 0;
             changed = true;
         }
@@ -237,26 +253,21 @@ class BooleanFastMuter extends LGraphNode {
     }
 
     getSubgraphBoolean(executable, visited = new Set()) {
-        const control = executable.resolveInput(1, new Set(visited));
-        let value = this.widgets.find((widget) => widget.name === "boolean").value;
-        if (executable.inputs[1].linkId != null) {
-            value = control?.widgetInfo?.value;
-            let owner = executable;
-            let slot = 1;
-            while (typeof value !== "boolean" && owner) {
-                const link = owner.graph.getLink(owner.inputs[slot].linkId);
-                if (!link) break;
-                if (link.originIsIoNode && owner.subgraphNode) {
-                    slot = link.origin_slot;
-                    owner = owner.nodesByExecutionId.get(owner.subgraphNodePath.join(":"));
-                } else {
-                    value = booleanConstant(owner.graph.getNodeById(link.origin_id));
-                    break;
-                }
-            }
-            if (typeof value !== "boolean") {
-                throw new Error("Boolean Fast Muter (ggtools): the Boolean control must have a value before execution.");
-            }
+        if (executable.inputs[1].linkId == null) return this.widgets.find((widget) => widget.name === "boolean").value;
+        // Follow Boolean constants whose value is wired on, e.g. to a toggle on the parent subgraph node.
+        const seen = new Set(visited);
+        let control = executable.resolveInput(1, seen);
+        while (control && !control.widgetInfo) {
+            const node = control.node.node;
+            const value = booleanConstant(node);
+            if (typeof value === "boolean") return value;
+            const slot = BOOLEAN_CONSTANTS.includes(node?.type) ? node.inputs.findIndex((input) => input.name === "value") : -1;
+            if (slot === -1) break;
+            control = control.node.resolveInput(slot, seen);
+        }
+        const value = control?.widgetInfo?.value;
+        if (typeof value !== "boolean") {
+            throw new Error("Boolean Fast Muter (ggtools): the Boolean control must have a value before execution.");
         }
         return value;
     }
@@ -287,17 +298,22 @@ app.registerExtension({
                     const targetId = [...executable.subgraphNodePath, node.id].join(":");
                     for (const target of nodesByExecutionId.values()) {
                         if (target.id !== targetId && !target.id.startsWith(targetId + ":")) continue;
-                        const previousMode = Object.getOwnPropertyDescriptor(target, "mode")?.get;
-                        Object.defineProperty(target, "mode", {
-                            configurable: true,
-                            get() {
-                                if (executable.mode !== 2 && executable.mode !== 4) {
-                                    if (executable.node.getSubgraphBoolean(executable)) return 2;
-                                    if (this.id === targetId) return 0;
-                                }
-                                return previousMode ? previousMode.call(this) : this.node.mode;
-                            },
-                        });
+                        if (!controllers.has(target)) {
+                            const muters = [];
+                            controllers.set(target, muters);
+                            const previousMode = Object.getOwnPropertyDescriptor(target, "mode")?.get;
+                            // Muted while any active muter is true; a direct target of an active muter runs otherwise.
+                            Object.defineProperty(target, "mode", {
+                                configurable: true,
+                                get() {
+                                    const active = muters.filter(({ muter }) => muter.mode !== 2 && muter.mode !== 4);
+                                    if (active.some(({ muter }) => muter.node.getSubgraphBoolean(muter))) return 2;
+                                    if (active.some(({ direct }) => direct)) return 0;
+                                    return previousMode ? previousMode.call(this) : this.node.mode;
+                                },
+                            });
+                        }
+                        controllers.get(target).push({ muter: executable, direct: target.id === targetId });
                     }
                 }
                 const resolveOutput = executable.resolveOutput;
