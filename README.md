@@ -25,7 +25,7 @@ The node preserves the source's connection type and output socket without conver
 | `true` | Bypass is active: the controlled connection is omitted from the execution prompt. |
 | `false` | No bypass: data passes through from the first connected target. |
 
-New nodes default to `false`. `OPT_CONNECTION` forwards the first connected target; additional targets share the same Boolean control. It is one output, not a selector or merger for multiple values.
+New nodes default to `false`.
 
 Outside subgraphs, target nodes update while you edit the workflow, within about 100 ms. Inside subgraphs, routing is resolved separately for each instance when the prompt is serialized. An unresolved connection type stays generic.
 
@@ -68,6 +68,18 @@ Restart ComfyUI and refresh the browser. No extra Python packages or `pip instal
 4. Connect `OPT_CONNECTION` to a compatible receiving input. Outside subgraphs, the controlled source can also remain connected directly to its consumers.
 
 Disconnecting the external Boolean returns control to the local toggle. Multiple targets can be controlled together through reroutes, collectors, or combiners. Outside subgraphs, muting a source affects all its outputs; each muter still closes its own output when its Boolean is `true`, even if another controller enables the source.
+
+### Multiple target inputs
+
+Connecting a target adds another spare socket so one Boolean can control several target nodes together:
+
+- **`true`:** all connected target nodes are muted.
+- **`false`:** all connected target nodes are enabled.
+- **`OPT_CONNECTION`:** forwards only the **first connected target's output**. Additional targets are controlled, but their values are not combined or selected by this output.
+
+For example, connect MODEL, CLIP, and VAE producers to control all three together. If MODEL is the first connected target, `OPT_CONNECTION` forwards that MODEL output.
+
+**Exposed subgraph inputs are connections, rather than local target nodes.** Only the first connected input is routed through `OPT_CONNECTION`; additional incoming sockets do not provide separate routing or mute the parent sources. Use one muter per independently routed subgraph input. The same Boolean can feed several muters when they should switch together.
 
 ### Controlling subgraph inputs from the outside
 
