@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-gg-tools"
 version = "0.1.0"
-description = "Practical workflow tools for ComfyUI."
+description = "Frontend-only ComfyUI nodes for tidy, switchable workflows: wireless Pipe To / Pipe From (also across subgraphs) and a Boolean Fast Muter."
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = []
@@ -10,4 +10,5 @@ dependencies = []
 Repository = "https://github.com/xducer/comfyui-gg-tools"
 
 [tool.comfy]
+PublisherId = "xducer"
 DisplayName = "GG Tools"

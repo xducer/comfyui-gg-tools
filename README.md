@@ -73,7 +73,7 @@ Put the muter inside the subgraph with its targets, and drag its `boolean` socke
 
 ## Install
 
-The repository is private. Clone it with an account that has access:
+Search for **GG Tools** in ComfyUI Manager, or clone it:
 
 ```sh
 cd /path/to/ComfyUI/custom_nodes
