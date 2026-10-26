@@ -88,3 +88,7 @@ Workflows that use these nodes need the pack installed to open; exported API pro
 
 - The nodes work in the browser; the queued prompt contains only ordinary nodes and links. **Export (API)** includes their effect, but an exported prompt does not change if you toggle afterwards, and prompts already queued are unaffected.
 - Boolean Fast Muter is inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy).
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE).

@@ -3,7 +3,11 @@ name = "comfyui-gg-tools"
 version = "0.1.0"
 description = "Practical workflow tools for ComfyUI."
 readme = "README.md"
+license = { file = "LICENSE" }
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/xducer/comfyui-gg-tools"
 
 [tool.comfy]
 DisplayName = "GG Tools"
