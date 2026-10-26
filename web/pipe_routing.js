@@ -21,7 +21,7 @@ export function collectPipes(root) {
     const pending = [{ graph: root, path: [], location: [], ancestors: new Set() }];
     while (pending.length) {
         const { graph, path, location, ancestors } = pending.pop();
-        if (ancestors.has(graph)) throw new Error("GGTools pipes: remove the recursive subgraph before queuing.");
+        if (ancestors.has(graph)) throw new Error("GG Tools pipes: remove the recursive subgraph before queuing.");
         const nextAncestors = new Set(ancestors).add(graph);
         graphs.add(graph);
         for (const node of graph.nodes) {
@@ -63,11 +63,11 @@ export function compilePipes(prompt, catalog) {
             const [id, slot] = value;
             const key = JSON.stringify(value);
             if (cache.has(key)) { value = cache.get(key); break; }
-            if (active.has(key)) throw new Error(`GGTools pipes: connection loop at Pipe From #${id}.`);
+            if (active.has(key)) throw new Error(`GG Tools pipes: connection loop at Pipe From #${id}.`);
             active.add(key);
             chain.push(key);
             const receiver = receivers.get(String(id));
-            if (!receiver) throw new Error(`GGTools pipes: Pipe From #${id} is missing from the workflow.`);
+            if (!receiver) throw new Error(`GG Tools pipes: Pipe From #${id} is missing from the workflow.`);
             const reference = parseKey(prompt[id].inputs.pipe);
             if (!reference) throw new Error(`Pipe From #${id}: select a Pipe To source.`);
             const [path, uid] = reference;
@@ -106,7 +106,7 @@ export function compilePipes(prompt, catalog) {
             const [current, leaving] = stack.pop();
             if (leaving) { state.set(current, 2); continue; }
             if (state.get(current) === 2) continue;
-            if (state.get(current) === 1) throw new Error(`GGTools pipes: execution dependency loop at node #${current}.`);
+            if (state.get(current) === 1) throw new Error(`GG Tools pipes: execution dependency loop at node #${current}.`);
             if (!output[current]) continue;
             state.set(current, 1);
             stack.push([current, true]);

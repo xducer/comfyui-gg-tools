@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
-  <title id="title">GGTools — expose the toggle, keep the routing inside</title>
+  <title id="title">GG Tools — expose the toggle, keep the routing inside</title>
   <desc id="desc">Two schematic views of the same ComfyUI subgraph. The parent node exposes a Bypass input toggle. Inside, a data connection passes through Boolean Fast Muter (ggtools) to an optional input. False includes the connection; true omits it for that instance, leaving other uses of the source connected.</desc>
   <rect width="1200" height="660" rx="20" fill="#191b20"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
     <g id="identity">
       <text x="52" y="48" font-size="18" letter-spacing="2" fill="#9ba6b8">COMFYUI CUSTOM NODES</text>
-      <text x="48" y="121" font-size="76" font-weight="750" fill="#f4f6fa">GGTools<tspan fill="#79d7a1">.</tspan></text>
+      <text x="48" y="121" font-size="76" font-weight="750" fill="#f4f6fa">GG Tools<tspan fill="#79d7a1">.</tspan></text>
       <text x="52" y="166" font-size="28" fill="#c0cad8">Expose the toggle. Keep the routing inside.</text>
     </g>
 
