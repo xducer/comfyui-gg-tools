@@ -55,7 +55,15 @@ Connect a source node's output to `target`, then connect `OPT_CONNECTION` to the
 - Several muters can control the same node; it stays muted while any of them is `true`. A muter can also target another muter: `true` mutes that muter and cuts its output.
 - While a muter is `false`, its targets are kept enabled. Inside a subgraph, targets are muted only in the queued prompt, separately for each copy of the subgraph, and don't look muted on the canvas.
 - Disconnecting a target, deleting the muter or bypassing it re-enables what it muted.
-- A left-out connection is absent, not `None`. Optional inputs take their no-input path and widget inputs fall back to their own value. A required input still fails with `Required input is missing`.
+- A left-out connection is simply absent, not `None`. The muter can't make an input optional, so what happens next depends on the receiving node:
+  - **Widget input** (a value you can also type in): falls back to its widget value.
+  - **Optional input the node really supports leaving empty**: the node runs without it.
+  - **Required input**: fails with `Required input is missing`.
+  - **Optional input the node doesn't really support**: the node may raise its own error, or pass `None` on, so the next node fails instead. ComfyUI's Switch node does this when the selected input is missing.
+
+  Place the muter right before a node that is built to run without that input, and test the `true` case once. Nodes reading the muted source directly, not through `OPT_CONNECTION`, also receive nothing.
+
+  **For an input that needs a value**, use ComfyUI's **Switch** node instead: `on_false` = your source, `on_true` = a stand-in (for example an empty latent or a blank image) and the same Boolean on `switch`. Its inputs are lazy, so the branch it doesn't select isn't computed.
 
 ### Controlling a subgraph from outside
 
