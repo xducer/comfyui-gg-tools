@@ -1,4 +1,4 @@
-# GGTools for ComfyUI
+# GG Tools for ComfyUI
 
 Frontend-only nodes for keeping large ComfyUI workflows tidy and switchable. No Python packages or extra requirements.
 
@@ -68,10 +68,10 @@ The repository is private. Clone it with an account that has access:
 
 ```sh
 cd /path/to/ComfyUI/custom_nodes
-git clone https://github.com/xducer/comfyui-ggtools.git
+git clone https://github.com/xducer/comfyui-gg-tools.git
 ```
 
-Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-ggtools`, then restart and refresh.
+Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-gg-tools`, then restart and refresh.
 
 ## Notes
 

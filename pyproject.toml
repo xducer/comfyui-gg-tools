@@ -1,9 +1,9 @@
 [project]
-name = "comfyui-ggtools"
+name = "comfyui-gg-tools"
 version = "0.1.0"
 description = "Practical workflow tools for ComfyUI."
 readme = "README.md"
 dependencies = []
 
 [tool.comfy]
-DisplayName = "GGTools"
+DisplayName = "GG Tools"
