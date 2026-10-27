@@ -1,0 +1,663 @@
+import { app } from "../../../scripts/app.js";
+import { LORA_MATRIX, collectMatrices, compileMatrices, parseStrength } from "./lora_matrix_compile.js";
+
+let loras = [];
+let lastTap = null;
+const titleMeasure = document.createElement("canvas").getContext("2d");
+// Room along the bottom edge for the group sockets.
+const SOCKET_STRIP = 18;
+
+// Each press already acts; a second press on the same target within 400 ms makes it a double press.
+function doublePress(target) {
+    const now = performance.now();
+    const double = lastTap?.target === target && now - lastTap.time < 400;
+    lastTap = double ? null : { target, time: now };
+    return double;
+}
+
+const loraName = (path) => path.split(/[\\/]/).at(-1).replace(/\.safetensors$/, "");
+
+function loraChoices(def) {
+    const spec = def?.input?.required?.lora_name;
+    return (Array.isArray(spec?.[0]) ? spec[0] : spec?.[1]?.options) || [];
+}
+
+const style = document.createElement("style");
+style.textContent = `
+.ggtools-lora-matrix { border-collapse: collapse; font: 12px sans-serif; color: var(--input-text); width: 100%; }
+.ggtools-lora-matrix td, .ggtools-lora-matrix th { padding: 2px; }
+.ggtools-lora-matrix .lora, .ggtools-lora-matrix .group, .ggtools-lora-matrix input { width: 100%; box-sizing: border-box; background: var(--comfy-input-bg); color: var(--input-text); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font: inherit; }
+.ggtools-lora-matrix th input { text-align: center; font-weight: bold; }
+.ggtools-lora-matrix .group { text-align: center; font-weight: bold; cursor: pointer; user-select: none; white-space: nowrap; }
+.ggtools-lora-matrix .wired { display: inline-block; box-sizing: border-box; width: 7px; height: 7px; border-radius: 50%; margin-left: 4px; vertical-align: middle; }
+.ggtools-lora-matrix .lora { max-width: 280px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ggtools-lora-matrix .cell { display: flex; min-width: 48px; height: 20px; line-height: 20px; text-align: center; border-radius: 4px; cursor: ew-resize; user-select: none; touch-action: none; border: 1px solid var(--border-color); background: var(--comfy-input-bg); }
+.ggtools-lora-matrix .cell.off { opacity: 0.35; text-decoration: line-through; }
+.ggtools-lora-matrix .part { flex: 1; }
+.ggtools-lora-matrix .part.clip { border-left: 1px solid var(--border-color); }
+.ggtools-lora-matrix .part.same { opacity: 0.45; }
+.ggtools-lora-matrix .sub { font-weight: normal; font-size: 10px; color: var(--descrip-text); display: flex; }
+.ggtools-lora-matrix .sub span { flex: 1; }
+.ggtools-lora-matrix .footer { display: flex; gap: 12px; }
+.ggtools-lora-matrix .remove { visibility: hidden; }
+.ggtools-lora-matrix th:hover .remove, .ggtools-lora-matrix tr:hover > td > .remove { visibility: visible; }
+.ggtools-lora-matrix .remove:hover { color: var(--error-text, #ff6b6b); }
+.ggtools-lora-matrix .undo { color: var(--descrip-text); }
+.ggtools-lora-matrix td.bypassed, .ggtools-lora-matrix th.bypassed .group, .ggtools-lora-matrix tr.muted > td { opacity: 0.35; }
+.ggtools-lora-matrix tr.muted .lora { text-decoration: line-through; }
+.ggtools-lora-matrix th.bypassed .group { text-decoration: line-through; }
+.ggtools-lora-matrix button { background: none; border: none; color: var(--descrip-text); cursor: pointer; font: inherit; padding: 0 4px; }
+.ggtools-lora-matrix button:hover, .ggtools-lora-matrix button.on { color: var(--input-text); }
+`;
+document.head.append(style);
+
+function element(tag, props = {}, ...children) {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...children);
+    return node;
+}
+
+// Help is drawn on the node instead of in title attributes: titles give a native tooltip, and other installed
+// extensions copy them into tooltips of their own, so the same text appeared twice.
+function hinted(node, hint) {
+    node.dataset.hint = hint;
+    return node;
+}
+
+// Two decimals unless the value needs more: 1 -> "1.00", 0.125 -> "0.125".
+const format = (n) => (Math.round(n * 100) === n * 100 ? n.toFixed(2) : String(n));
+const show = (text) => (text === "" ? "–" : Number.isFinite(Number(text)) ? format(Number(text)) : text);
+
+// A cell's value is "0.80", or "0.80/0.50" when the clip strength differs.
+function strengths(cell) {
+    const [model = "", clip] = cell.value.split("/").map((part) => part.trim());
+    return { model, clip };
+}
+
+function setStrengths(cell, model, clip) {
+    const differs = clip !== undefined && Number(clip) !== Number(model);
+    cell.value = differs ? `${format(Number(model))}/${format(Number(clip))}` : format(Number(model));
+}
+
+class LoraMatrix extends LGraphNode {
+    static title = LORA_MATRIX;
+    static description = "Several LoRA stacks side by side from one LoRA list: each group gets its own model and clip outputs, for comparing LoRA combinations.";
+
+    constructor() {
+        super(LORA_MATRIX);
+        this.comfyClass = LORA_MATRIX;
+        this.isVirtualNode = false;
+        this.properties = { matrix: { columns: [{ key: "c0", name: "Group A" }, { key: "c1", name: "Group B" }], rows: [], next: 2 } };
+        this.addInput("model", "MODEL");
+        this.addInput("clip", "CLIP");
+        this.table = element("table", { className: "ggtools-lora-matrix" });
+        this.table.onpointerover = (event) => this.showHint(event.target.closest?.("[data-hint]")?.dataset.hint ?? "");
+        this.table.onpointerleave = () => this.showHint("");
+        // The table is laid out a frame or more after it is shown (leaving compact view, expanding a collapsed
+        // node), so fit the node and its sockets when its size changes instead of on the next interaction.
+        this.observer = new ResizeObserver(() => this.fit());
+        this.observer.observe(this.table);
+        const widget = this.addDOMWidget("matrix", "lora_matrix", this.table, {
+            serialize: false,
+            getMinHeight: () => (this.compact ? 0 : (this.properties.matrix.rows.length + (this.properties.matrix.showClip ? 3 : 2)) * 28 + 8),
+        });
+        widget.serialize = false;
+        // Outputs sit under their groups, so the table starts right below the two inputs.
+        this.widgets_start_y = 2 * LiteGraph.NODE_SLOT_HEIGHT + 4;
+        // Title-bar switch between the matrix and compact view, like the subgraph node's button.
+        this.viewButton = this.addTitleButton({ name: "view", text: "", xOffset: -10, yOffset: 0, fontSize: 16 });
+        this.update();
+    }
+
+    // Outputs are left alone while a workflow loads; afterConfigureGraph syncs them once links exist.
+    onConfigure() { this.layout(); }
+
+    onRemoved() { this.observer.disconnect(); }
+
+    showHint(text) {
+        if (this.hint === text) return;
+        this.hint = text;
+        this.setDirtyCanvas(true, false);
+    }
+
+    // The hovered element's help, word-wrapped into the free space right of the two inputs, above the table.
+    drawHint(ctx) {
+        if (!this.hint) return;
+        const left = 80;
+        const width = this.size[0] - left - 12;
+        ctx.save();
+        ctx.font = `${LiteGraph.NODE_SUBTEXT_SIZE}px sans-serif`;
+        ctx.fillStyle = LiteGraph.WIDGET_SECONDARY_TEXT_COLOR;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        const lines = [""];
+        for (const word of this.hint.split(" ")) {
+            const next = lines.at(-1) ? `${lines.at(-1)} ${word}` : word;
+            if (lines.at(-1) && ctx.measureText(next).width > width) lines.push(word);
+            else lines[lines.length - 1] = next;
+        }
+        lines.slice(0, 3).forEach((line, i) => ctx.fillText(line, left, 4 + i * 14));
+        ctx.restore();
+    }
+
+    fit() {
+        if (this.compact) return;
+        this.measuredWidth = null;
+        this.tableWidth();
+        if (this.measuredWidth && this.size[0] < this.measuredWidth) this.setSize([this.measuredWidth, this.size[1]]);
+        this.placeOutputs();
+        this.graph?.setDirtyCanvas(true, true);
+    }
+
+    // Column positions follow the table's layout, which can change on any resize, so place the sockets each frame.
+    // The table's width is only certain once it is laid out, so the node also widens here if it ended up narrower.
+    onDrawForeground(ctx) {
+        this.placeOutputs();
+        if (this.compact) return;
+        this.drawHint(ctx);
+        this.tableWidth();
+        if (this.measuredWidth && this.size[0] < this.measuredWidth) this.setSize([this.measuredWidth, this.size[1]]);
+    }
+
+    // The height follows the table, so resizing only changes the width.
+    onResize(size) {
+        const height = this.computeSize()[1];
+        if (size[1] === height) return;
+        // Dragging a top corner moves the top edge; keep the node where it was instead.
+        const canvas = app.canvas;
+        if (canvas?.resizing_node === this && canvas.pointer?.resizeDirection?.includes("N")) this.pos = [this.pos[0], this.pos[1] + size[1] - height];
+        this.size = [size[0], height];
+    }
+
+    onConnectionsChange(type, index) {
+        if (type === LiteGraph.INPUT && this.inputs[index]?.name === "clip") this.syncOutputs();
+        // The group headers show which outputs are wired, and whether their input is connected.
+        this.render();
+    }
+
+    get matrix() { return this.properties.matrix; }
+
+    // The view is kept apart from the LoRA settings: "compact" shows a normal node with the outputs listed on the right.
+    get compact() { return this.properties.view === "compact"; }
+
+    setView(view) {
+        this.properties.view = view;
+        this.layout();
+        // A compact node shrinks to its list; an expanded one takes its table's width once that is measured.
+        if (this.compact) this.setSize(this.computeSize());
+        else if (this.measuredWidth) this.setSize([this.measuredWidth, this.size[1]]);
+        this.placeOutputs();
+    }
+
+    onTitleButtonClick(button, canvas) {
+        if (button.name === "view") this.setView(this.compact ? undefined : "compact");
+        else super.onTitleButtonClick(button, canvas);
+    }
+
+    // The canvas puts the returned items at the top of the node's menu.
+    getExtraMenuOptions() {
+        return [
+            { content: this.compact ? "Expanded view" : "Compact view", callback: () => this.setView(this.compact ? undefined : "compact") },
+            {
+                content: "Bypass groups", has_submenu: true,
+                submenu: { options: this.matrix.columns.map((column) => ({
+                    content: `${column.bypass ? "☐" : "☑"} ${column.name}`,
+                    callback: () => { column.bypass = !column.bypass; this.update(); },
+                })) },
+            },
+        ];
+    }
+
+    newKey() { return `c${this.matrix.next++}`; }
+
+    // A new group copies the cells of `source`, or starts every LoRA on at 1.00 when there is none.
+    addGroup(name, source, index) {
+        const column = { key: this.newKey(), name };
+        for (const row of this.matrix.rows) row.cells[column.key] = { ...(source ? row.cells[source.key] ?? { value: "", on: false } : { value: "1.00", on: true }) };
+        this.matrix.columns.splice(index, 0, column);
+        return column;
+    }
+
+    // The frontend files links under their origin slot number (output.links is a deprecated view of that).
+    outgoingLinks() {
+        return [...(this.graph?.links?.values() ?? [])].filter((link) => link.origin_id === this.id);
+    }
+
+    // Each group gives a model output, and a clip output while a clip is connected, kept together per group.
+    syncOutputs() {
+        const clip = this.inputs.find((input) => input.name === "clip")?.link != null;
+        const { columns } = this.matrix;
+        const wanted = columns.flatMap((column) => [
+            { name: `model:${column.key}`, type: "MODEL", label: `${column.name} [model]` },
+            ...(clip ? [{ name: `clip:${column.key}`, type: "CLIP", label: `${column.name} [clip]` }] : []),
+        ]);
+        const keys = columns.map((column) => column.key);
+        for (let i = this.outputs.length - 1; i >= 0; i--) {
+            const output = this.outputs[i];
+            const [kind, key] = output.name.split(":");
+            const keep = wanted.some((w) => w.name === output.name) || (kind === "clip" && keys.includes(key) && this.isOutputConnected(i));
+            if (!keep) this.removeOutput(i);
+        }
+        for (const w of wanted) {
+            const output = this.outputs.find((output) => output.name === w.name) || this.addOutput(w.name, w.type);
+            output.label = w.label;
+        }
+        const rank = (output) => {
+            const [kind, key] = output.name.split(":");
+            return keys.indexOf(key) * 2 + (kind === "clip" ? 1 : 0);
+        };
+        const before = [...this.outputs];
+        const sorted = [...before].sort((a, b) => rank(a) - rank(b));
+        if (sorted.every((output, i) => output === before[i])) return;
+        // Read each link's output before moving the slots, then file the link under that output's new slot.
+        const moves = this.outgoingLinks().map((link) => [link, sorted.indexOf(before[link.origin_slot])]);
+        this.outputs.splice(0, this.outputs.length, ...sorted);
+        for (const [link, slot] of moves) link.origin_slot = slot;
+    }
+
+    update() {
+        this.syncOutputs();
+        this.layout();
+    }
+
+    layout() {
+        this.table.style.display = this.compact ? "none" : "";
+        // PrimeIcons pi-window-maximize / pi-window-minimize.
+        this.viewButton.text = this.compact ? "\uE93B" : "\uE93A";
+        this.render();
+        const [width, height] = this.computeSize();
+        // Expanded, only a real measurement widens the node, so a saved width survives loading; fit() widens it
+        // once the table has been measured. Compact has no table, so its width (the title) is always known.
+        this.setSize([Math.max(this.size[0], this.compact ? width : this.measuredWidth ?? 0), height]);
+        this.placeOutputs();
+        this.graph?.setDirtyCanvas(true, true);
+    }
+
+    // The canvas clamps resizing to computeSize. A DOM widget only reports its height there, and the
+    // default height reserves a row per output, which sit on the bottom edge here instead.
+    computeSize(out) {
+        const size = super.computeSize(out);
+        // The default width fits the title but not the title-bar button beside it (about 40 px with its gap).
+        titleMeasure.font = this.titleFontStyle;
+        size[0] = Math.max(size[0], LiteGraph.NODE_TITLE_HEIGHT + titleMeasure.measureText(this.title).width + 40);
+        const widget = this.widgets?.[0];
+        if (!widget || this.compact) return size;
+        size[0] = Math.max(size[0], this.tableWidth());
+        size[1] = this.widgets_start_y + widget.options.getMinHeight() + 2 * (widget.margin ?? 10) + SOCKET_STRIP;
+        return size;
+    }
+
+    // Expanded: each group's model and clip sockets sit on the bottom edge under its column, with wires leaving
+    // downwards, and no drawn label as the column names the group. Compact: the normal list on the right.
+    // The labels themselves stay for Pipe To and saving; only what is drawn changes.
+    placeOutputs() {
+        for (const output of this.outputs) {
+            if (!Object.hasOwn(output, "renderingLabel")) Object.defineProperty(output, "renderingLabel", { get: () => this.drawnLabel(output), configurable: true });
+        }
+        if (this.compact) {
+            let moved = false;
+            for (const output of this.outputs) {
+                if (output.pos) moved = true;
+                output.pos = undefined;
+                output.dir = undefined;
+            }
+            if (moved) this.graph?.setDirtyCanvas(true, true);
+            return;
+        }
+        // A collapsed or hidden table measures 0; keep the sockets where they were until it is laid out again.
+        if (this.flags?.collapsed || this.groupHeaders?.some((header) => header.isConnected && !header.offsetWidth)) return;
+        const margin = this.widgets?.[0]?.margin ?? 10;
+        const y = this.size[1] - SOCKET_STRIP / 2;
+        let moved = false;
+        this.matrix.columns.forEach((column, i) => {
+            const header = this.groupHeaders?.[i];
+            const center = header?.isConnected ? margin + header.offsetLeft + header.offsetWidth / 2 : 220 + i * 80 + 40;
+            const model = this.outputs.find((output) => output.name === `model:${column.key}`);
+            const clip = this.outputs.find((output) => output.name === `clip:${column.key}`);
+            for (const [output, x] of [[model, clip ? center - 10 : center], [clip, center + 10]]) {
+                if (!output) continue;
+                if (output.pos?.[0] !== x || output.pos?.[1] !== y) {
+                    output.pos = [x, y];
+                    moved = true;
+                }
+                output.dir = LiteGraph.DOWN;
+            }
+        });
+        if (moved) this.graph?.setDirtyCanvas(true, true);
+    }
+
+    drawnLabel(output) {
+        if (!this.compact) return "";
+        const key = output.name.split(":")[1];
+        return this.matrix.columns.find((column) => column.key === key)?.bypass ? `${output.label} (bypassed)` : output.label;
+    }
+
+    // Measured once per render. A table that isn't laid out (not on the page yet, or hidden while zoomed out)
+    // measures 0 and reports no width: ComfyUI widens every node to computeSize after loading a workflow, so
+    // any estimate would undo a saved width. fit() widens the node once the table can be measured.
+    tableWidth() {
+        const { table } = this;
+        if (this.measuredWidth == null && table?.isConnected) {
+            const width = table.style.width;
+            table.style.width = "min-content";
+            const needed = table.offsetWidth;
+            table.style.width = width;
+            if (needed) this.measuredWidth = needed + 2 * (this.widgets[0].margin ?? 10);
+        }
+        return this.measuredWidth ?? 0;
+    }
+
+    cell(row, column, showClip, change) {
+        const cell = (row.cells[column.key] ??= { value: "", on: false });
+        const parts = showClip ? [element("span", { className: "part model" }), element("span")] : [element("span", { className: "part" })];
+        const view = hinted(element("div", {}, ...parts), "click: on/off · drag left/right: adjust · double-click: type a value");
+        const fill = () => {
+            const { model, clip } = strengths(cell);
+            view.className = `cell${cell.on && cell.value ? "" : " off"}`;
+            if (showClip) {
+                parts[0].textContent = show(model);
+                parts[1].textContent = show(clip ?? model);
+                parts[1].className = `part clip${clip === undefined ? " same" : ""}`;
+            } else parts[0].textContent = cell.value ? (clip === undefined ? show(model) : `${show(model)}/${show(clip)}`) : "–";
+        };
+        fill();
+        const toggle = () => {
+            cell.on = !cell.on;
+            if (cell.on && !cell.value) cell.value = "1.00";
+            fill();
+            this.graph?.setDirtyCanvas(true, true);
+        };
+        const edit = (part) => {
+            const { model, clip } = strengths(cell);
+            const input = element("input", { value: part === "clip" ? show(clip ?? model) : part === "model" ? show(model) : cell.value });
+            let done = false;
+            const commit = (save) => {
+                if (done) return;
+                done = true;
+                const text = input.value.trim();
+                const number = Number(text);
+                if (save && part === "clip" && model && (!text || Number.isFinite(number))) setStrengths(cell, model, text ? number : undefined);
+                else if (save && part === "model" && text && Number.isFinite(number)) {
+                    setStrengths(cell, number, clip);
+                    cell.on = true;
+                } else if (save && part === "value" && parseStrength(text)) {
+                    const typed = parseStrength(text);
+                    setStrengths(cell, typed.model, text.includes("/") ? typed.clip : undefined);
+                    cell.on = true;
+                } else if (save && !text && part !== "clip") {
+                    cell.value = "";
+                    cell.on = false;
+                }
+                change();
+            };
+            input.onkeydown = (event) => {
+                if (event.key === "Enter") commit(true);
+                if (event.key === "Escape") commit(false);
+            };
+            input.onblur = () => commit(true);
+            view.replaceWith(input);
+            input.focus?.();
+            input.select();
+        };
+
+        // Press and release toggles, two quick presses edit, and dragging sets the strength of the half under the pointer.
+        let drag = null;
+        view.onpointerdown = (event) => {
+            if (event.button) return;
+            event.stopPropagation();
+            const part = !showClip ? "value" : event.target?.className?.includes("clip") ? "clip" : "model";
+            const { model, clip } = strengths(cell);
+            drag = { x: event.clientX, part, model, clip, start: Number(part === "clip" ? clip ?? model : model), moved: false };
+            view.setPointerCapture?.(event.pointerId);
+        };
+        view.onpointermove = (event) => {
+            if (!drag || !drag.model) return;
+            const dx = event.clientX - drag.x;
+            if (!drag.moved && Math.abs(dx) < 4) return;
+            drag.moved = true;
+            const value = Math.round((drag.start + dx / 200) * 100) / 100;
+            if (drag.part === "clip") setStrengths(cell, drag.model, value);
+            else setStrengths(cell, value, drag.clip);
+            fill();
+        };
+        view.onpointerup = () => {
+            if (!drag) return;
+            const { moved, part } = drag;
+            drag = null;
+            if (moved) {
+                this.graph?.setDirtyCanvas(true, true);
+                return;
+            }
+            const double = doublePress(`cell:${row.key}:${column.key}`);
+            toggle();
+            if (double) edit(part);
+        };
+        view.onpointercancel = () => { drag = null; };
+        return view;
+    }
+
+    render() {
+        const { columns, rows } = this.matrix;
+        // Any edit ends the chance to undo the last removal.
+        const change = () => {
+            this.undo = null;
+            this.update();
+        };
+        let focus = null;
+        const header = element("tr", {}, element("th", { textContent: "LoRA" }));
+        this.groupHeaders = [];
+        this.measuredWidth = null;
+        for (const column of columns) {
+            let name;
+            if (this.renaming === column.key) {
+                name = element("input", { value: column.name });
+                let done = false;
+                const commit = (save) => {
+                    if (done) return;
+                    done = true;
+                    this.renaming = null;
+                    if (save) column.name = name.value.trim() || column.name;
+                    change();
+                };
+                name.onkeydown = (event) => {
+                    if (event.key === "Enter") commit(true);
+                    if (event.key === "Escape") commit(false);
+                };
+                name.onblur = () => commit(true);
+                focus = name;
+            } else {
+                // A dot in the socket colour for each of the group's outputs that is wired: filled while its
+                // input is connected, a ring like an unconnected socket while it isn't.
+                const wired = ["model", "clip"].flatMap((kind) => {
+                    const slot = this.outputs.findIndex((output) => output.name === `${kind}:${column.key}`);
+                    if (slot < 0 || !this.isOutputConnected(slot)) return [];
+                    const color = LGraphCanvas.link_type_colors?.[this.outputs[slot].type] ?? "#888";
+                    const fed = this.inputs.find((input) => input.name === kind)?.link != null;
+                    return [hinted(element("span", { className: "wired", style: fed ? `background: ${color}` : `border: 1.5px solid ${color}` }),
+                        fed ? `${kind} output connected` : `${kind} output connected, but the ${kind} input isn't`)];
+                });
+                name = hinted(element("div", { className: "group" }, column.name, ...wired), "click: bypass (passes model and clip through without this group's LoRAs) · double-click: rename · right-click: more");
+                name.onpointerdown = (event) => { if (!event.button) event.stopPropagation(); };
+                // A redraw sits between the two presses, so the double press is matched on the group, not the element.
+                name.onpointerup = (event) => {
+                    if (event.button) return;
+                    column.bypass = !column.bypass;
+                    if (doublePress(`group:${column.key}`)) this.renaming = column.key;
+                    this.update();
+                };
+                name.oncontextmenu = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const bypassLabel = column.bypass ? "Turn group on" : "Bypass group";
+                    new LiteGraph.ContextMenu(["Rename group", bypassLabel, "Duplicate group", null, "Remove group"], {
+                        event,
+                        callback: (choice) => {
+                            if (choice === "Rename group") {
+                                this.renaming = column.key;
+                                this.update();
+                            } else if (choice === bypassLabel) {
+                                column.bypass = !column.bypass;
+                                this.update();
+                            } else if (choice === "Duplicate group") {
+                                const used = new Set(columns.map((c) => c.name));
+                                let copyName = `${column.name} Copy`;
+                                for (let n = 2; used.has(copyName); n++) copyName = `${column.name} Copy ${n}`;
+                                const copy = this.addGroup(copyName, column, columns.indexOf(column) + 1);
+                                Object.assign(copy, { ...column, key: copy.key, name: copy.name });
+                                change();
+                            } else if (choice === "Remove group") remove.onclick();
+                        },
+                    });
+                };
+            }
+            const remove = hinted(element("button", { className: "remove", textContent: "×" }), "remove group");
+            remove.onclick = () => {
+                const index = columns.indexOf(column);
+                const cells = Object.fromEntries(rows.map((row) => [row.key, row.cells[column.key]]));
+                const links = this.outgoingLinks().map((link) => ({ name: this.outputs[link.origin_slot]?.name, target: link.target_id, slot: link.target_slot }))
+                    .filter((link) => link.name?.endsWith(`:${column.key}`));
+                this.matrix.columns = columns.filter((c) => c !== column);
+                for (const row of rows) delete row.cells[column.key];
+                this.undo = {
+                    label: `Removed ${column.name}`,
+                    restore: () => {
+                        this.matrix.columns.splice(Math.min(index, this.matrix.columns.length), 0, column);
+                        for (const row of this.matrix.rows) if (cells[row.key]) row.cells[column.key] = cells[row.key];
+                        this.syncOutputs();
+                        for (const { name, target, slot } of links) {
+                            const node = this.graph?.getNodeById(target);
+                            const output = this.outputs.findIndex((output) => output.name === name);
+                            if (node && output >= 0) this.connect(output, node, slot);
+                        }
+                    },
+                };
+                this.update();
+            };
+            const th = element("th", { className: column.bypass ? "bypassed" : "" }, element("div", { style: "display:flex" }, name, remove));
+            this.groupHeaders.push(th);
+            header.append(th);
+        }
+        const addColumn = hinted(element("button", { textContent: "+" }), "add group (copies the last one)");
+        addColumn.onclick = () => {
+            const used = new Set(columns.map((c) => c.name));
+            const name = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"].map((letter) => `Group ${letter}`).find((name) => !used.has(name)) || `Group ${columns.length + 1}`;
+            this.addGroup(name, columns.at(-1), columns.length);
+            change();
+        };
+        header.append(element("th", {}, addColumn));
+        const body = [header];
+        const showClip = !!this.matrix.showClip;
+        if (showClip) {
+            const sub = element("tr", {}, element("th"));
+            for (const _ of columns) sub.append(element("th", {}, element("div", { className: "sub" }, element("span", { textContent: "model" }), element("span", { textContent: "clip" }))));
+            body.push(sub);
+        }
+
+        for (const row of rows) {
+            const name = loraName(row.lora);
+            const missing = row.lora && !loras.includes(row.lora);
+            const lora = hinted(element("div", { className: "lora", textContent: row.lora ? `${name}${missing ? " (missing)" : ""}` : "— pick a LoRA —" }),
+                row.lora ? `${row.lora} · click: mute in all groups · double-click: change · right-click: more` : "click: pick a LoRA");
+            const pick = (event) => new LiteGraph.ContextMenu(loras, {
+                event, className: "dark", scale: Math.max(1, app.canvas?.ds?.scale ?? 1),
+                callback: (value) => { row.lora = value; change(); },
+            });
+            lora.onpointerdown = (event) => { if (!event.button) event.stopPropagation(); };
+            // Like a group name: one press mutes the row in every group, a double press opens the picker.
+            lora.onpointerup = (event) => {
+                if (event.button) return;
+                if (!row.lora) return pick(event);
+                row.mute = !row.mute;
+                const double = doublePress(`row:${row.key}`);
+                this.update();
+                if (double) pick(event);
+            };
+            lora.oncontextmenu = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const muteLabel = row.mute ? "Unmute LoRA" : "Mute LoRA";
+                new LiteGraph.ContextMenu(["Change LoRA", muteLabel, null, "Remove LoRA"], {
+                    event,
+                    callback: (choice) => {
+                        if (choice === "Change LoRA") pick(event);
+                        else if (choice === muteLabel) {
+                            row.mute = !row.mute;
+                            this.update();
+                        } else if (choice === "Remove LoRA") remove.onclick();
+                    },
+                });
+            };
+            const tr = element("tr", { className: row.mute ? "muted" : "" }, element("td", {}, lora));
+            for (const column of columns) tr.append(element("td", { className: column.bypass ? "bypassed" : "" }, this.cell(row, column, showClip, change)));
+            const remove = hinted(element("button", { className: "remove", textContent: "×" }), "remove LoRA");
+            remove.onclick = () => {
+                const index = rows.indexOf(row);
+                this.matrix.rows = rows.filter((r) => r !== row);
+                this.undo = { label: `Removed ${loraName(row.lora) || "LoRA"}`, restore: () => this.matrix.rows.splice(Math.min(index, this.matrix.rows.length), 0, row) };
+                this.update();
+            };
+            tr.append(element("td", {}, remove));
+            body.push(tr);
+        }
+
+        const addRow = element("button", { textContent: "+ LoRA" });
+        addRow.onclick = () => {
+            rows.push({ key: this.newKey(), lora: "", cells: Object.fromEntries(columns.map((c) => [c.key, { value: "1.00", on: true }])) });
+            change();
+        };
+        const clipToggle = element("button", { className: showClip ? "on" : "", textContent: `${showClip ? "☑" : "☐"} clip strengths` });
+        clipToggle.onclick = () => { this.matrix.showClip = !showClip; change(); };
+        const footer = element("div", { className: "footer" }, addRow, clipToggle);
+        if (this.undo) {
+            const undo = element("button", { textContent: "Undo" });
+            undo.onclick = () => {
+                const { restore } = this.undo;
+                this.undo = null;
+                restore();
+                this.update();
+            };
+            footer.append(element("span", { className: "undo" }, `${this.undo.label} ·`, undo));
+        }
+        body.push(element("tr", {}, element("td", { colSpan: columns.length + 2 }, footer)));
+        this.table.replaceChildren(...body);
+        focus?.focus();
+        focus?.select();
+    }
+}
+
+function matrixNodes() {
+    const root = app.rootGraph || app.graph;
+    return [root, ...(root?.subgraphs?.values?.() ?? [])].flatMap((graph) => graph?.nodes ?? []).filter((node) => node instanceof LoraMatrix);
+}
+
+app.registerExtension({
+    name: "ggtools.lora_matrix",
+    beforeRegisterNodeDef(_, def) {
+        if (def.name === "LoraLoaderModelOnly") loras = loraChoices(def);
+    },
+    registerCustomNodes() {
+        LiteGraph.registerNodeType(LORA_MATRIX, LoraMatrix);
+        LoraMatrix.category = "ggtools";
+    },
+    // The frontend builds a bare definition for frontend-only nodes; add the terms people search for.
+    beforeRegisterVueAppNodeDefs(defs) {
+        const def = defs.find((def) => def.name === LORA_MATRIX);
+        if (def) def.search_aliases = ["LoRA Loader", "Multi LoRA", "LoRA Stack", "LoRA Mixer", "LoRA Matrix", "LoRA Branch", "LoRA Compare"];
+    },
+    refreshComboInNodes(defs) {
+        loras = loraChoices(defs.LoraLoaderModelOnly);
+        for (const node of matrixNodes()) node.render();
+    },
+    afterConfigureGraph() {
+        for (const node of matrixNodes()) node.update();
+    },
+    setup() {
+        const graphToPrompt = app.graphToPrompt;
+        app.graphToPrompt = async function (graph = this.rootGraph || this.graph, ...args) {
+            const result = await graphToPrompt.call(this, graph, ...args);
+            const matrices = collectMatrices(result.workflow);
+            if (!matrices.size) return result;
+            return { ...result, output: compileMatrices(result.output, matrices) };
+        };
+    },
+});

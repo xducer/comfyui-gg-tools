@@ -1,13 +1,14 @@
 # GG Tools for ComfyUI
 
-Frontend-only nodes for keeping large ComfyUI workflows tidy and switchable. No Python packages or extra requirements.
+Frontend-only nodes for keeping large ComfyUI workflows tidy, switchable and easy to compare. No Python packages or extra requirements.
 
 | Node | What it does |
 | --- | --- |
 | **Pipe To / Pipe From (ggtools)** | Send connections anywhere in the workflow, including into and out of subgraphs, without wires. |
+| **LoRA Multi-Stack (ggtools)** | Several LoRA stacks side by side from one LoRA list, each with its own model and clip outputs, for comparing LoRA combinations. |
 | **Boolean Fast Muter (ggtools)** | Switch a connection, or a group of source nodes, on and off with a Boolean. |
 
-All three are under **Add Node → ggtools**.
+All four are under **Add Node → ggtools**.
 
 ## Pipe To and Pipe From
 
@@ -38,6 +39,29 @@ Same-type values stay apart by name, so each one goes exactly where you connect 
 - Switching a Pipe From to another pipe keeps the connections whose name and type exist on the new pipe. Anything else, including an entry removed from the Pipe To, is marked `(missing)` rather than silently fed a different value. If the selected pipe itself is gone, the dropdown shows `Missing: …`; a pasted Pipe From that can't tell which copy of a pipe it belongs to asks you to `Select copied pipe source`.
 
 When you queue, each used output becomes an ordinary link to the original source, and the pipe nodes never reach the server. Unused outputs are ignored. If a muted or bypassed source leaves an entry empty, the receiving input is left unconnected, as if it were wired directly. Queuing stops with an error naming the Pipe From if a used output is `(missing)`, its pipe was deleted, or no pipe is selected.
+
+## LoRA Multi-Stack
+
+![LoRA Multi-Stack with four LoRAs and four groups. Each group column holds its own strengths, one with a separate clip strength; Group B is bypassed and one LoRA is muted. Every group has a model and a clip socket on the bottom edge, and two groups are wired into a Pipe To.](assets/multistack_example_01.png)
+
+Each column is a **group**: its own LoRA stack, with its own `model` and `clip` outputs on the bottom edge under it. Each row is a LoRA, and each cell is that LoRA's strength in that group. Connect `model`, and `clip` if your LoRAs need it; the clip outputs appear once `clip` is connected.
+
+| Where | Click | Double-click | Right-click |
+| --- | --- | --- | --- |
+| Strength cell | on/off (keeps the value) | type a value | |
+| Group name | bypass: the group's outputs pass model and clip through unchanged | rename | rename, bypass, duplicate, remove |
+| LoRA name | mute in every group | pick a LoRA (with a filter box) | change, mute, remove |
+
+- Drag a strength left or right to adjust it. `0.80` sets model and clip; tick **clip strengths** to set them separately (stored as `0.80/0.50`). An empty cell, an off cell or `0` leaves the LoRA out of that group.
+- **+** adds a group copying the last one; **+ LoRA** adds a row. Removing a group or row can be undone from the footer until your next edit.
+- Dots after a group name show which of its outputs are wired; a ring means the matching input isn't connected.
+- Hover anything for a short explanation above the table.
+
+![The same node in compact view between a model loader and a Pipe To: model and clip on the left, and every group's model and clip outputs listed on the right, Group B marked as bypassed. A Pipe From reads the pipe elsewhere.](assets/multistack_example_02.png)
+
+The title-bar button switches to **compact view**: a normal node with each group's outputs listed on the right. Switch back with the same button. Toggling bypass in compact view is in the node's right-click menu.
+
+When you queue, each used group becomes a chain of ComfyUI's own LoRA loaders, and the node never reaches the server. Groups that start with the same LoRAs at the same strengths load that part once.
 
 ## Boolean Fast Muter
 

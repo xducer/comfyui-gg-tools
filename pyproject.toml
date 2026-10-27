@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-gg-tools"
-version = "0.1.0"
-description = "Frontend-only ComfyUI nodes for tidy, switchable workflows: wireless Pipe To / Pipe From (also across subgraphs) and a Boolean Fast Muter."
+version = "0.2.0"
+description = "Frontend-only ComfyUI nodes for tidy, switchable workflows: wireless Pipe To / Pipe From (also across subgraphs), a LoRA Multi-Stack for comparing LoRA combinations, and a Boolean Fast Muter."
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = []

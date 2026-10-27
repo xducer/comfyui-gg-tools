@@ -180,6 +180,7 @@ function graphAt(root, path) {
 
 class PipeTo extends LGraphNode {
     static title = PIPE_TO;
+    static description = "Collects any connections into a named pipe that Pipe From nodes can read anywhere in the workflow, including inside subgraphs, without wires.";
 
     constructor() {
         super(PIPE_TO);
@@ -246,6 +247,7 @@ class PipeTo extends LGraphNode {
 
 class PipeFrom extends LGraphNode {
     static title = PIPE_FROM;
+    static description = "Reads a Pipe To's connections by name, anywhere in the workflow, including inside subgraphs.";
 
     constructor() {
         super(PIPE_FROM);
@@ -352,8 +354,17 @@ class PipeFrom extends LGraphNode {
     }
 }
 
+const SEARCH_ALIASES = {
+    [PIPE_TO]: ["Set", "Send", "Wireless", "Broadcast", "Bus", "Pipe In", "Bundle", "Anything Everywhere"],
+    [PIPE_FROM]: ["Get", "Receive", "Wireless", "Bus", "Pipe Out", "Unbundle", "Anything Everywhere"],
+};
+
 app.registerExtension({
     name: "ggtools.wireless_pipes",
+    // The frontend builds bare definitions for frontend-only nodes; add the terms people search for.
+    beforeRegisterVueAppNodeDefs(defs) {
+        for (const def of defs) if (SEARCH_ALIASES[def.name]) def.search_aliases = SEARCH_ALIASES[def.name];
+    },
     registerCustomNodes() {
         LiteGraph.registerNodeType(PIPE_TO, PipeTo);
         LiteGraph.registerNodeType(PIPE_FROM, PipeFrom);

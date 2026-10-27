@@ -38,6 +38,7 @@ function booleanConstant(node) {
 
 class BooleanFastMuter extends LGraphNode {
     static title = `${NODE_TYPE} (ggtools)`;
+    static description = "Mutes its target nodes and leaves their connection out while the Boolean is true; passes it through while false.";
 
     constructor() {
         super(BooleanFastMuter.title);
@@ -324,6 +325,11 @@ app.registerExtension({
             }
             return executableNodes;
         };
+    },
+    // The frontend builds a bare definition for frontend-only nodes; add the terms people search for.
+    beforeRegisterVueAppNodeDefs(defs) {
+        const def = defs.find((def) => def.name === NODE_TYPE);
+        if (def) def.search_aliases = ["Bypass", "Mute", "Toggle", "Switch", "Enable", "Disable", "Boolean"];
     },
     registerCustomNodes() {
         LiteGraph.registerNodeType(NODE_TYPE, BooleanFastMuter);
