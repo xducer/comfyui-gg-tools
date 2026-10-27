@@ -42,7 +42,7 @@ When you queue, each used output becomes an ordinary link to the original source
 
 ## LoRA Multi-Stack
 
-![LoRA Multi-Stack with four LoRAs and four groups. Each group column holds its own strengths, one with a separate clip strength; Group B is bypassed and one LoRA is muted. Every group has a model and a clip socket on the bottom edge, and two groups are wired into a Pipe To.](assets/multistack_example_01.png)
+![LoRA Multi-Stack with four LoRAs and four groups, one strength per cell. Group B is bypassed, one LoRA is muted and one cell in test 1 is off; a cell with its own clip strength reads 0.52/1.00. Every group has a model and a clip socket on the bottom edge.](assets/multistack_example_01.png)
 
 Each column is a **group**: its own LoRA stack, with its own `model` and `clip` outputs on the bottom edge under it. Each row is a LoRA, and each cell is that LoRA's strength in that group. Connect `model`, and `clip` if your LoRAs need it; the clip outputs appear once `clip` is connected.
 
@@ -57,9 +57,11 @@ Each column is a **group**: its own LoRA stack, with its own `model` and `clip` 
 - Dots after a group name show which of its outputs are wired; a ring means the matching input isn't connected.
 - Hover anything for a short explanation above the table.
 
-![The same node in compact view between a model loader and a Pipe To: model and clip on the left, and every group's model and clip outputs listed on the right, Group B marked as bypassed. A Pipe From reads the pipe elsewhere.](assets/multistack_example_02.png)
+![The same node with clip strengths ticked: every cell is split into a model and a clip half, with model and clip under each group name, and two groups are wired into a Pipe To.](assets/multistack_example_02.png)
 
 The title-bar button switches to **compact view**: a normal node with each group's outputs listed on the right. Switch back with the same button. Toggling bypass in compact view is in the node's right-click menu.
+
+![The same node in compact view between a model loader and a Pipe To: model and clip on the left, and every group's model and clip outputs listed on the right, Group B marked as bypassed. A Pipe From reads the pipe elsewhere.](assets/multistack_example_03.png)
 
 When you queue, each used group becomes a chain of ComfyUI's own LoRA loaders, and the node never reaches the server. Groups that start with the same LoRAs at the same strengths load that part once.
 
