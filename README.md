@@ -42,7 +42,7 @@ When you queue, each used output becomes an ordinary link to the original source
 
 ## LoRA Multi-Stack
 
-![LoRA Multi-Stack with four LoRAs and four groups, one strength per cell. Group B is bypassed, one LoRA is muted and one cell in test 1 is off; a cell with its own clip strength reads 0.52/1.00. Every group has a model and a clip socket on the bottom edge.](assets/multistack_example_01.png)
+![LoRA Multi-Stack with five LoRAs and four groups, one strength per cell. Group B is bypassed, one LoRA is muted and some cells are off; a cell with its own clip strength reads 0.52/1.00. Each group's model and clip sockets sit on a plate on the bottom edge, faded for groups with nothing wired.](assets/multistack_example_01.png)
 
 Each column is a **group**: its own LoRA stack, with its own `model` and `clip` outputs on the bottom edge under it. Each row is a LoRA, and each cell is that LoRA's strength in that group. Connect `model`, and `clip` if your LoRAs need it; the clip outputs appear once `clip` is connected.
 
@@ -55,9 +55,10 @@ Each column is a **group**: its own LoRA stack, with its own `model` and `clip` 
 - Drag a strength left or right to adjust it. `0.80` sets model and clip; tick **clip strengths** to set them separately (stored as `0.80/0.50`). An empty cell, an off cell or `0` leaves the LoRA out of that group.
 - **+** adds a group copying the last one; **+ LoRA** adds a row. Removing a group or row can be undone from the footer until your next edit.
 - Dots after a group name show which of its outputs are wired; a ring means the matching input isn't connected.
+- Drag a group's socket plate onto another group to swap their model/clip wires (or move them, if that group has none). Undo in the footer reverts it.
 - Hover anything for a short explanation above the table.
 
-![The same node with clip strengths ticked: every cell is split into a model and a clip half, with model and clip under each group name, and two groups are wired into a Pipe To.](assets/multistack_example_02.png)
+![The same node with clip strengths ticked: every cell is split into a model and a clip half, with model and clip under each group name, and Main Loras and test 1 are wired into a Pipe To.](assets/multistack_example_02.png)
 
 The title-bar button switches to **compact view**: a normal node with each group's outputs listed on the right. Switch back with the same button. Toggling bypass in compact view is in the node's right-click menu.
 

@@ -6,6 +6,9 @@ let lastTap = null;
 const titleMeasure = document.createElement("canvas").getContext("2d");
 // Room along the bottom edge for the group sockets.
 const SOCKET_STRIP = 18;
+const FRAME_HINT = "drag onto another group to swap their model/clip wires";
+// One plate size for every group; group columns are at least this wide (plus their 2 px cell padding).
+const PAD_WIDTH = 88;
 
 // Each press already acts; a second press on the same target within 400 ms makes it a double press.
 function doublePress(target) {
@@ -28,6 +31,7 @@ style.textContent = `
 .ggtools-lora-matrix td, .ggtools-lora-matrix th { padding: 2px; }
 .ggtools-lora-matrix .lora, .ggtools-lora-matrix .group, .ggtools-lora-matrix input { width: 100%; box-sizing: border-box; background: var(--comfy-input-bg); color: var(--input-text); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .ggtools-lora-matrix th input { text-align: center; font-weight: bold; }
+.ggtools-lora-matrix th.group-col { min-width: ${PAD_WIDTH + 4}px; }
 .ggtools-lora-matrix .group { text-align: center; font-weight: bold; cursor: pointer; user-select: none; white-space: nowrap; }
 .ggtools-lora-matrix .wired { display: inline-block; box-sizing: border-box; width: 7px; height: 7px; border-radius: 50%; margin-left: 4px; vertical-align: middle; }
 .ggtools-lora-matrix .lora { max-width: 280px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -99,7 +103,10 @@ class LoraMatrix extends LGraphNode {
         this.observer.observe(this.table);
         const widget = this.addDOMWidget("matrix", "lora_matrix", this.table, {
             serialize: false,
-            getMinHeight: () => (this.compact ? 0 : (this.properties.matrix.rows.length + (this.properties.matrix.showClip ? 3 : 2)) * 28 + 8),
+            // Exactly the table plus its margins: ComfyUI would hand a DOM widget the rest of the node, and the
+            // socket strip below the table has to stay the node's, so presses on the socket frames reach onMouseDown.
+            getMinHeight: () => this.widgetHeight(),
+            getMaxHeight: () => this.widgetHeight(),
         });
         widget.serialize = false;
         // Outputs sit under their groups, so the table starts right below the two inputs.
@@ -113,6 +120,137 @@ class LoraMatrix extends LGraphNode {
     onConfigure() { this.layout(); }
 
     onRemoved() { this.observer.disconnect(); }
+
+    // A frame around each group's socket pair. The canvas handles presses on the sockets first (new and moved
+    // wires), so a press on the frame beside them reaches onMouseDown and drags the group's wires instead.
+    frameAt([x, y]) {
+        if (this.compact || y < this.size[1] - SOCKET_STRIP || y > this.size[1]) return null;
+        return this.frames?.find((frame) => Math.abs(x - frame.center) <= frame.width / 2)?.key ?? null;
+    }
+
+    drawFrames(ctx) {
+        if (!this.frames?.length) return;
+        const top = this.size[1] - SOCKET_STRIP + 1;
+        const height = SOCKET_STRIP - 2;
+        ctx.save();
+        ctx.lineWidth = 1;
+        // Plates like the strength boxes; the canvas draws the sockets after this, on top of them. A six-dot grip
+        // at the left end marks them as draggable; hovered, dragged and target plates get a bright outline and a
+        // lighter fill. Status shows as contrast, not colour, since users recolour nodes: a group with no wired
+        // output fades, a bypassed one is muted. While dragging every plate is a drop target, so all show fully.
+        const active = this.dragging ? [this.dragging.from, this.dragging.over] : [this.hovered];
+        for (const frame of this.frames) {
+            const left = frame.center - frame.width / 2;
+            const lit = active.includes(frame.key);
+            const bypassed = this.matrix.columns.find((column) => column.key === frame.key)?.bypass;
+            ctx.globalAlpha = lit || this.dragging ? 1 : (this.groupWired(frame.key) ? 1 : 0.45) * (bypassed ? 0.7 : 1);
+            ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
+            ctx.strokeStyle = lit ? LiteGraph.WIDGET_TEXT_COLOR : LiteGraph.WIDGET_OUTLINE_COLOR;
+            ctx.beginPath();
+            ctx.roundRect(left, top, frame.width, height, 4);
+            ctx.fill();
+            if (lit) {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+                ctx.fill();
+            }
+            ctx.stroke();
+            ctx.fillStyle = ctx.strokeStyle;
+            for (const [dx, dy] of [[7, 4], [11, 4], [7, 8], [11, 8], [7, 12], [11, 12]]) {
+                ctx.beginPath();
+                ctx.arc(left + dx, top + dy, 1, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1;
+        if (this.dragging?.moved) {
+            const width = this.frames.find((frame) => frame.key === this.dragging.from).width;
+            ctx.setLineDash([4, 3]);
+            ctx.strokeStyle = LiteGraph.WIDGET_TEXT_COLOR;
+            ctx.beginPath();
+            ctx.roundRect(this.dragging.x - width / 2, top, width, height, 4);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    onMouseDown(e, pos, canvas) {
+        const from = this.frameAt(pos);
+        if (!from) return false;
+        const { pointer } = canvas;
+        this.dragging = { from, x: pos[0], over: null, moved: false };
+        pointer.onDragStart = () => { this.dragging.moved = true; };
+        pointer.onDrag = (eMove) => {
+            this.dragging.x = eMove.canvasX - this.pos[0];
+            const over = this.frameAt([this.dragging.x, this.size[1] - SOCKET_STRIP / 2]);
+            this.dragging.over = over !== from ? over : null;
+            const target = this.matrix.columns.find((column) => column.key === this.dragging.over);
+            this.showHint(!target ? "drop on another group's sockets" : this.groupWired(target.key) ? `swap wires with ${target.name}` : `move wires to ${target.name}`);
+            this.setDirtyCanvas(true, false);
+        };
+        pointer.onDragEnd = () => { if (this.dragging.over) this.swapGroupWires(from, this.dragging.over); };
+        pointer.finally = () => {
+            this.dragging = null;
+            this.showHint("");
+            this.setDirtyCanvas(true, false);
+        };
+        return true;
+    }
+
+    onMouseMove(e, pos) {
+        if (this.dragging) return;
+        const hovered = this.frameAt(pos);
+        if (hovered !== this.hovered) this.setDirtyCanvas(true, false);
+        this.hovered = hovered;
+        if (hovered) this.showHint(FRAME_HINT);
+        else if (this.hint === FRAME_HINT) this.showHint("");
+    }
+
+    onMouseLeave() {
+        if (this.dragging) return;
+        if (this.hovered) this.setDirtyCanvas(true, false);
+        this.hovered = null;
+        if (this.hint === FRAME_HINT) this.showHint("");
+    }
+
+    groupWired(key) {
+        return ["model", "clip"].some((kind) => {
+            const slot = this.outputs.findIndex((output) => output.name === `${kind}:${key}`);
+            return slot >= 0 && this.isOutputConnected(slot);
+        });
+    }
+
+    // Model wires trade places with model wires and clip with clip; with nothing on one side, they just move.
+    exchangeWires(a, b) {
+        const moves = [];
+        for (const kind of ["model", "clip"]) {
+            const from = this.outputs.findIndex((output) => output.name === `${kind}:${a}`);
+            const to = this.outputs.findIndex((output) => output.name === `${kind}:${b}`);
+            if (from < 0 || to < 0) continue;
+            for (const link of this.outgoingLinks()) {
+                if (link.origin_slot === from) moves.push([link, to]);
+                else if (link.origin_slot === to) moves.push([link, from]);
+            }
+        }
+        for (const [link, slot] of moves) link.origin_slot = slot;
+        this.notifyTargets(moves.map(([link]) => link));
+    }
+
+    // Tell each receiving node, as reconnecting by hand would, so nodes that name or type their inputs from the
+    // source (such as Pipe To) update now rather than on the next unrelated change.
+    notifyTargets(links) {
+        for (const link of links) {
+            const target = this.graph?.getNodeById(link.target_id);
+            target?.onConnectionsChange?.(LiteGraph.INPUT, link.target_slot, true, link, target.inputs?.[link.target_slot]);
+        }
+    }
+
+    swapGroupWires(a, b) {
+        const name = (key) => this.matrix.columns.find((column) => column.key === key).name;
+        const label = this.groupWired(b) ? `Swapped wires of ${name(a)} and ${name(b)}` : `Moved wires from ${name(a)} to ${name(b)}`;
+        this.exchangeWires(a, b);
+        this.undo = { label, restore: () => this.exchangeWires(a, b) };
+        this.update();
+    }
 
     showHint(text) {
         if (this.hint === text) return;
@@ -155,6 +293,7 @@ class LoraMatrix extends LGraphNode {
         this.placeOutputs();
         if (this.compact) return;
         this.drawHint(ctx);
+        this.drawFrames(ctx);
         this.tableWidth();
         if (this.measuredWidth && this.size[0] < this.measuredWidth) this.setSize([this.measuredWidth, this.size[1]]);
     }
@@ -176,6 +315,12 @@ class LoraMatrix extends LGraphNode {
     }
 
     get matrix() { return this.properties.matrix; }
+
+    widgetHeight() {
+        if (this.compact) return 0;
+        const { rows, showClip } = this.properties.matrix;
+        return (rows.length + (showClip ? 3 : 2)) * 28 + 8 + 2 * (this.widgets?.[0]?.margin ?? 10);
+    }
 
     // The view is kept apart from the LoRA settings: "compact" shows a normal node with the outputs listed on the right.
     get compact() { return this.properties.view === "compact"; }
@@ -238,8 +383,10 @@ class LoraMatrix extends LGraphNode {
             const keep = wanted.some((w) => w.name === output.name) || (kind === "clip" && keys.includes(key) && this.isOutputConnected(i));
             if (!keep) this.removeOutput(i);
         }
+        const relabeled = new Set();
         for (const w of wanted) {
             const output = this.outputs.find((output) => output.name === w.name) || this.addOutput(w.name, w.type);
+            if (output.label !== w.label) relabeled.add(output);
             output.label = w.label;
         }
         const rank = (output) => {
@@ -248,11 +395,14 @@ class LoraMatrix extends LGraphNode {
         };
         const before = [...this.outputs];
         const sorted = [...before].sort((a, b) => rank(a) - rank(b));
-        if (sorted.every((output, i) => output === before[i])) return;
-        // Read each link's output before moving the slots, then file the link under that output's new slot.
-        const moves = this.outgoingLinks().map((link) => [link, sorted.indexOf(before[link.origin_slot])]);
-        this.outputs.splice(0, this.outputs.length, ...sorted);
-        for (const [link, slot] of moves) link.origin_slot = slot;
+        if (sorted.some((output, i) => output !== before[i])) {
+            // Read each link's output before moving the slots, then file the link under that output's new slot.
+            const moves = this.outgoingLinks().map((link) => [link, sorted.indexOf(before[link.origin_slot])]);
+            this.outputs.splice(0, this.outputs.length, ...sorted);
+            for (const [link, slot] of moves) link.origin_slot = slot;
+        }
+        // A renamed group renames its outputs; nodes naming their inputs after them (Pipe To) need to know.
+        if (relabeled.size) this.notifyTargets(this.outgoingLinks().filter((link) => relabeled.has(this.outputs[link.origin_slot])));
     }
 
     update() {
@@ -283,7 +433,7 @@ class LoraMatrix extends LGraphNode {
         const widget = this.widgets?.[0];
         if (!widget || this.compact) return size;
         size[0] = Math.max(size[0], this.tableWidth());
-        size[1] = this.widgets_start_y + widget.options.getMinHeight() + 2 * (widget.margin ?? 10) + SOCKET_STRIP;
+        size[1] = this.widgets_start_y + this.widgetHeight() + SOCKET_STRIP;
         return size;
     }
 
@@ -309,9 +459,11 @@ class LoraMatrix extends LGraphNode {
         const margin = this.widgets?.[0]?.margin ?? 10;
         const y = this.size[1] - SOCKET_STRIP / 2;
         let moved = false;
+        this.frames = [];
         this.matrix.columns.forEach((column, i) => {
             const header = this.groupHeaders?.[i];
             const center = header?.isConnected ? margin + header.offsetLeft + header.offsetWidth / 2 : 220 + i * 80 + 40;
+            this.frames.push({ key: column.key, center, width: PAD_WIDTH });
             const model = this.outputs.find((output) => output.name === `model:${column.key}`);
             const clip = this.outputs.find((output) => output.name === `clip:${column.key}`);
             for (const [output, x] of [[model, clip ? center - 10 : center], [clip, center + 10]]) {
@@ -533,7 +685,7 @@ class LoraMatrix extends LGraphNode {
                 };
                 this.update();
             };
-            const th = element("th", { className: column.bypass ? "bypassed" : "" }, element("div", { style: "display:flex" }, name, remove));
+            const th = element("th", { className: `group-col${column.bypass ? " bypassed" : ""}` }, element("div", { style: "display:flex" }, name, remove));
             this.groupHeaders.push(th);
             header.append(th);
         }
