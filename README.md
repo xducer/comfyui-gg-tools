@@ -91,7 +91,7 @@ Connect a source node's output to `target`, then connect `OPT_CONNECTION` to the
 
 ### Controlling a subgraph from outside
 
-![Inside a subgraph, an input passes through Boolean Fast Muter. A Boolean subgraph input drives the muter, so the parent subgraph node shows the toggle on the main canvas.](assets/readme/hero.svg)
+![Inside a subgraph, an input passes through Boolean Fast Muter. A Boolean subgraph input drives the muter, so the parent subgraph node shows the toggle on the main canvas.](assets/readme/subgraph-control.svg)
 
 Put the muter inside the subgraph with its targets, and drag its `boolean` socket onto the subgraph's input slot to create a Boolean subgraph input. The toggle then appears on the parent subgraph node, and each copy of the subgraph can have its own value. Use one muter per subgraph input you want to switch independently.
 
