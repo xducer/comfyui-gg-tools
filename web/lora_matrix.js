@@ -49,6 +49,11 @@ style.textContent = `
 .ggtools-lora-matrix .undo { color: var(--descrip-text); }
 .ggtools-lora-matrix td.bypassed, .ggtools-lora-matrix th.bypassed .group, .ggtools-lora-matrix tr.muted > td { opacity: 0.35; }
 .ggtools-lora-matrix tr.muted .lora { text-decoration: line-through; }
+.ggtools-lora-matrix .name { display: flex; align-items: center; }
+.ggtools-lora-matrix .grip { cursor: grab; user-select: none; touch-action: none; color: var(--descrip-text); padding: 0 4px 0 0; }
+.ggtools-lora-matrix tr.dragging > td { opacity: 0.4; }
+.ggtools-lora-matrix tr.drop-above > td { box-shadow: inset 0 2px 0 var(--input-text); }
+.ggtools-lora-matrix tr.drop-below > td { box-shadow: inset 0 -2px 0 var(--input-text); }
 .ggtools-lora-matrix th.bypassed .group { text-decoration: line-through; }
 .ggtools-lora-matrix button { background: none; border: none; color: var(--descrip-text); cursor: pointer; font: inherit; padding: 0 4px; }
 .ggtools-lora-matrix button:hover, .ggtools-lora-matrix button.on { color: var(--input-text); }
@@ -588,6 +593,42 @@ class LoraMatrix extends LGraphNode {
         return view;
     }
 
+    // Rows are applied top to bottom, so their order is each group's loading order. The grip drags a row to a
+    // new position; a line marks where it lands.
+    rowGrip(row, change) {
+        const grip = hinted(element("span", { className: "grip", textContent: "⠿" }), "drag up or down to reorder the LoRAs");
+        const mark = (tr, cls) => { tr.className = tr.className.replace(/ ?(dragging|drop-above|drop-below)/g, "") + (cls ? ` ${cls}` : ""); };
+        let drag = null;
+        grip.onpointerdown = (event) => {
+            if (event.button) return;
+            event.stopPropagation();
+            grip.setPointerCapture?.(event.pointerId);
+            drag = { from: this.matrix.rows.indexOf(row), to: null };
+            mark(this.rowElements[drag.from], "dragging");
+        };
+        grip.onpointermove = (event) => {
+            if (!drag) return;
+            // The insertion point is before the first row whose middle is below the pointer.
+            const middles = this.rowElements.map((tr) => { const box = tr.getBoundingClientRect(); return box.top + box.height / 2; });
+            const before = middles.filter((middle) => middle < event.clientY).length;
+            drag.to = before > drag.from ? before - 1 : before;
+            this.rowElements.forEach((tr, i) => mark(tr, i === drag.from ? "dragging" : ""));
+            if (drag.to !== drag.from) mark(this.rowElements[Math.min(before, this.rowElements.length - 1)], before < this.rowElements.length ? "drop-above" : "drop-below");
+        };
+        const end = (move) => {
+            if (!drag) return;
+            const { from, to } = drag;
+            drag = null;
+            this.rowElements.forEach((tr) => mark(tr, ""));
+            if (!move || to == null || to === from) return;
+            this.matrix.rows.splice(to, 0, ...this.matrix.rows.splice(from, 1));
+            change();
+        };
+        grip.onpointerup = () => end(true);
+        grip.onpointercancel = () => end(false);
+        return grip;
+    }
+
     render() {
         const { columns, rows } = this.matrix;
         // Any edit ends the chance to undo the last removal.
@@ -598,6 +639,7 @@ class LoraMatrix extends LGraphNode {
         let focus = null;
         const header = element("tr", {}, element("th", { textContent: "LoRA" }));
         this.groupHeaders = [];
+        this.rowElements = [];
         this.measuredWidth = null;
         for (const column of columns) {
             let name;
@@ -739,7 +781,8 @@ class LoraMatrix extends LGraphNode {
                     },
                 });
             };
-            const tr = element("tr", { className: row.mute ? "muted" : "" }, element("td", {}, lora));
+            const tr = element("tr", { className: row.mute ? "muted" : "" }, element("td", {}, element("div", { className: "name" }, this.rowGrip(row, change), lora)));
+            this.rowElements.push(tr);
             for (const column of columns) tr.append(element("td", { className: column.bypass ? "bypassed" : "" }, this.cell(row, column, showClip, change)));
             const remove = hinted(element("button", { className: "remove", textContent: "×" }), "remove LoRA");
             remove.onclick = () => {
