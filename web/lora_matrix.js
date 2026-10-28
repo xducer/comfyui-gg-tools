@@ -1,5 +1,7 @@
 import { app } from "../../../scripts/app.js";
-import { LORA_MATRIX, collectMatrices, compileMatrices, parseStrength } from "./lora_matrix_compile.js";
+import { LORA_MATRIX, compileMatrices, parseStrength } from "./lora_matrix_compile.js";
+import { collectNodes } from "./workflow_nodes.js";
+import { addPromptStep, LORA_STACK } from "./prompt_steps.js";
 
 let loras = [];
 let lastTap = null;
@@ -847,12 +849,11 @@ app.registerExtension({
         for (const node of matrixNodes()) node.update();
     },
     setup() {
-        const graphToPrompt = app.graphToPrompt;
-        app.graphToPrompt = async function (graph = this.rootGraph || this.graph, ...args) {
-            const result = await graphToPrompt.call(this, graph, ...args);
-            const matrices = collectMatrices(result.workflow);
-            if (!matrices.size) return result;
-            return { ...result, output: compileMatrices(result.output, matrices) };
-        };
+        addPromptStep(LORA_STACK, {
+            compile(result) {
+                const matrices = collectNodes(result.workflow, LORA_MATRIX);
+                return matrices.size ? { ...result, output: compileMatrices(result.output, matrices) } : result;
+            },
+        });
     },
 });

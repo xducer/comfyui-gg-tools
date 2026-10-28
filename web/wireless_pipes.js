@@ -1,5 +1,6 @@
 import { app } from "../../../scripts/app.js";
 import { PIPE_TO, PIPE_FROM, pipeKey, parseKey, collectPipes, compilePipes } from "./pipe_routing.js";
+import { addPromptStep, PIPES } from "./prompt_steps.js";
 
 const states = new WeakMap();
 const observed = new WeakSet();
@@ -372,13 +373,13 @@ app.registerExtension({
         PipeFrom.category = "ggtools";
     },
     setup() {
-        const graphToPrompt = app.graphToPrompt;
-        app.graphToPrompt = async function (graph = this.rootGraph || this.graph, ...args) {
-            const catalog = refresh(graph);
-            const result = await graphToPrompt.call(this, graph, ...args);
-            if (!catalog.sources.length && !catalog.receivers.length) return result;
-            return { ...result, output: compilePipes(result.output, collectPipes(result.workflow)) };
-        };
+        addPromptStep(PIPES, {
+            prepare: refresh,
+            compile(result, catalog) {
+                if (!catalog.sources.length && !catalog.receivers.length) return result;
+                return { ...result, output: compilePipes(result.output, collectPipes(result.workflow)) };
+            },
+        });
     },
     afterConfigureGraph() {
         schedule(app.rootGraph || app.graph);

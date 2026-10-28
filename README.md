@@ -6,9 +6,9 @@ Frontend-only nodes for keeping large ComfyUI workflows tidy, switchable and eas
 | --- | --- |
 | **Pipe To / Pipe From (ggtools)** | Send connections anywhere in the workflow, including into and out of subgraphs, without wires. |
 | **LoRA Multi-Stack (ggtools)** | Several LoRA stacks side by side from one LoRA list, each with its own model and clip outputs, for comparing LoRA combinations. |
-| **Boolean Fast Muter (ggtools)** | Switch a connection, or a group of source nodes, on and off with a Boolean. |
+| **Crossroads Split / Join (ggtools)** | Choose by number which of several paths runs; the other paths are left out of the queue. Also switches optional inputs off. |
 
-All four are under **Add Node → ggtools**.
+All five are under **Add Node → ggtools**.
 
 ## Pipe To and Pipe From
 
@@ -68,37 +68,43 @@ The title-bar button switches to **compact view**: a normal node with each group
 
 When you queue, each used group becomes a chain of ComfyUI's own LoRA loaders, and the node never reaches the server. Groups that start with the same LoRAs at the same strengths load that part once.
 
-## Boolean Fast Muter
+## Crossroads Split and Join
 
-![Two copies of the same setup. With false, Load Image runs and its image passes through the muter to VAE Encode. With true, Load Image is muted and the connection is left out.](assets/bypass_example_01.png)
+![Crossroads Split takes the clip down two paths, each with its own CLIP Text Encode, and a Crossroads Join brings the conditioning back to KSampler and Conditioning Zero Out. Path 2 is selected, so path 1 is dimmed on both nodes, and the image follows path 2's coral reef prompt.](assets/crossroads_example_01.png)
 
-Connect a source node's output to `target`, then connect `OPT_CONNECTION` to the input it should feed. Once connected, the sockets show the source's name and type instead.
+The Split sends what you connect down several numbered paths, and `path` picks the one that runs. Everything after the Split's other outputs is left out of the queued prompt, previews and saves included. The Join brings the paths back together.
 
-| `boolean` | Result |
+1. Connect what the paths need to **Crossroads Split (ggtools)**. Each connection adds an output per path, such as `Path 1 · clip` and `Path 2 · clip`, and a spare `connect anything` appears for the next. For a number or text, use an Int, Float, String or Boolean node; the old Primitive only feeds `path`.
+2. Build each path from its outputs with ordinary nodes.
+3. Drop each path's result on the `connect a path` input of **Crossroads Join (ggtools)**. The Join files it under its path, in a row for its value, and gives each row an output that carries what the selected path delivers.
+4. Set `path` to the number of the path to run.
+
+| Control | What it does |
 | --- | --- |
-| `false` (default) | The source runs and its output passes through. |
-| `true` | The source is muted and the connection is left out of the queued prompt. |
+| `path` | The path that runs. Wire an Int, a Primitive or a subgraph input into it to choose from elsewhere. Numbers wrap around, so an Int set to increment after each run goes through the paths in turn. An Int set to change *after* generating shows the number for the next run; ComfyUI's widget control mode setting *before* shows the current one. |
+| **+ Path** | Adds a path (also in the node's right-click menu, with Remove path). |
+| **×** beside an output | Removes that path (hover the output to see it). The paths after it move up a number. |
 
-- Use the toggle on the node, or connect a core Boolean, Primitive or Easy-Use boolean node. Other Boolean sources, including values calculated during execution, stop the queue with an error.
-- Connect several targets to switch them together. `OPT_CONNECTION` forwards the first connected target. Targets can sit behind reroutes or rgthree Node Collector / Node Combiner nodes.
-- Several muters can control the same node; it stays muted while any of them is `true`. A muter can also target another muter: `true` mutes that muter and cuts its output.
-- While a muter is `false`, its targets are kept enabled. Inside a subgraph, targets are muted only in the queued prompt, separately for each copy of the subgraph, and don't look muted on the canvas.
-- Disconnecting a target, deleting the muter or bypassing it re-enables what it muted.
-- A left-out connection is simply absent, not `None`. The muter can't make an input optional, so what happens next depends on the receiving node:
-  - **Widget input** (a value you can also type in): falls back to its widget value.
-  - **Optional input the node really supports leaving empty**: the node runs without it.
-  - **Required input**: fails with `Required input is missing`.
-  - **Optional input the node doesn't really support**: the node may raise its own error, or pass `None` on, so the next node fails instead. ComfyUI's Switch node does this when the selected input is missing.
+- Paths that aren't selected are dimmed on both nodes.
+- A path can change what it carries, such as clip in and conditioning back, and doesn't have to start at the Split: drop a wire from elsewhere on that path's row of the Join. Only what comes from the Split is left out, so a preview on such a path still runs.
+- A node wired straight from a Split output belongs to that path. To switch only an input, bring it back through a Join.
+- Crossroads can be nested. A crossroads on a path that isn't selected doesn't run at all.
 
-  Place the muter right before a node that is built to run without that input, and test the `true` case once. Nodes reading the muted source directly, not through `OPT_CONNECTION`, also receive nothing.
+### Switching an input off
 
-  **For an input that needs a value**, use ComfyUI's **Switch** node instead: `on_false` = your source, `on_true` = a stand-in (for example an empty latent or a blank image) and the same Boolean on `switch`. Its inputs are lazy, so the branch it doesn't select isn't computed.
+![Load Image's image and mask go into the Split. Path 1 brings both through a Join into Krea2 Edit Prep's image and image_mask; path 2 is left empty. With path 1 selected, the generated diver has the reference man's face.](assets/crossroads_example_02.png)
+
+A path with nothing wired into the Join passes nothing on, and the receiving input is left out of the queued prompt. Here path 1 brings the reference image and mask, and path 2 is empty:
+
+![The same workflow with path 2 selected. The Join passes nothing on, Krea2 Edit Prep runs without a reference, and the diver comes from the prompt alone.](assets/crossroads_example_03.png)
+
+With path 2, Krea2 Edit Prep runs without a reference, and Load Image doesn't run either. This works for inputs a node can run without. If a required input would be left empty, queuing stops, ComfyUI marks the input and a message names the path that delivers nothing.
 
 ### Controlling a subgraph from outside
 
-![Inside a subgraph, an input passes through Boolean Fast Muter. A Boolean subgraph input drives the muter, so the parent subgraph node shows the toggle on the main canvas.](assets/readme/subgraph-control.svg)
+Put the Split inside the subgraph and drag its `path` socket onto the subgraph's input slot. The number then appears on the parent subgraph node, and each copy of the subgraph can pick its own path. A value that enters the Split through a subgraph input takes that input's name; rename the input to rename the value.
 
-Put the muter inside the subgraph with its targets, and drag its `boolean` socket onto the subgraph's input slot to create a Boolean subgraph input. The toggle then appears on the parent subgraph node, and each copy of the subgraph can have its own value. Use one muter per subgraph input you want to switch independently.
+When you queue, the Split and Join are compiled out: the selected path is wired straight through and the other paths are removed. The path number must be known when you queue; a number computed by another node stops the queue with an error.
 
 ## Install
 
@@ -115,8 +121,7 @@ Workflows that use these nodes need the pack installed to open; exported API pro
 
 ## Notes
 
-- The nodes work in the browser; the queued prompt contains only ordinary nodes and links. **Export (API)** includes their effect, but an exported prompt does not change if you toggle afterwards, and prompts already queued are unaffected.
-- Boolean Fast Muter is inspired by [Fast Muter from rgthree-comfy](https://github.com/rgthree/rgthree-comfy).
+- The nodes work in the browser; the queued prompt contains only ordinary nodes and links. **Export (API)** includes their effect, but an exported prompt does not change if you change the nodes afterwards, and prompts already queued are unaffected.
 
 ## License
 

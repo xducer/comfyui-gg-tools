@@ -1,22 +1,5 @@
 export const LORA_MATRIX = "LoRA Multi-Stack (ggtools)";
 
-export function collectMatrices(workflow) {
-    const definitions = new Map((workflow.definitions?.subgraphs || []).map((graph) => [graph.id, graph]));
-    const matrices = new Map();
-    const pending = [{ graph: workflow, path: [], ancestors: new Set() }];
-    while (pending.length) {
-        const { graph, path, ancestors } = pending.pop();
-        if (ancestors.has(graph)) continue;
-        for (const node of graph.nodes) {
-            const id = [...path, String(node.id)].join(":");
-            if (node.type === LORA_MATRIX) matrices.set(id, node);
-            const subgraph = definitions.get(node.type);
-            if (subgraph) pending.push({ graph: subgraph, path: [...path, String(node.id)], ancestors: new Set(ancestors).add(graph) });
-        }
-    }
-    return matrices;
-}
-
 // "0.8" sets both strengths, "0.8/0.5" sets model and clip.
 export function parseStrength(text) {
     const parts = String(text).split("/").map((part) => part.trim());
