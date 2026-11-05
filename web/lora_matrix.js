@@ -723,7 +723,7 @@ class LoraMatrix extends LGraphNode {
                         for (const { name, target, slot } of links) {
                             const node = this.graph?.getNodeById(target);
                             const output = this.outputs.findIndex((output) => output.name === name);
-                            if (node && output >= 0) this.connect(output, node, slot);
+                            if (node && output >= 0) this.connectSlots(this.outputs[output], node, node.inputs[slot]);
                         }
                     },
                 };

@@ -491,7 +491,8 @@ class CrossroadsJoin extends LGraphNode {
         this.replaced = null;
         if (replaced) return () => {
             const to = this.inputs.findIndex((input) => input.name === replaced.name);
-            if (to >= 0 && !this.isInputConnected(to)) this.graph.getNodeById(replaced.origin)?.connect(replaced.slot, this, to);
+            const origin = this.graph.getNodeById(replaced.origin);
+            if (origin && to >= 0 && !this.isInputConnected(to)) origin.connectSlots(origin.outputs[replaced.slot], this, this.inputs[to]);
         };
     }
 
