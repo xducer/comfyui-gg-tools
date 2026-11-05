@@ -12,3 +12,4 @@ Repository = "https://github.com/xducer/comfyui-gg-tools"
 [tool.comfy]
 PublisherId = "xducer"
 DisplayName = "GG Tools"
+Icon = "https://raw.githubusercontent.com/xducer/comfyui-gg-tools/main/assets/icon.png"
