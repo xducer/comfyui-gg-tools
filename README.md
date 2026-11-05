@@ -59,6 +59,7 @@ Each column is a **group**: its own LoRA stack, with its own `model` and `clip` 
 - Dots after a group name show which of its outputs are wired; a ring means the matching input isn't connected.
 - Drag a group's socket plate onto another group to swap their model/clip wires (or move them, if that group has none). Undo in the footer reverts it.
 - Hover anything for a short explanation above the table.
+- Copy and paste keeps the wires between the copied nodes. Ctrl+V leaves the pasted node's `model` and `clip` inputs empty, as ComfyUI does for any node; Ctrl+Shift+V keeps them connected.
 
 ![The same node with clip strengths ticked: every cell is split into a model and a clip half, with model and clip under each group name, and Main Loras and test 1 are wired into a Pipe To.](assets/multistack_example_03.png)
 
@@ -115,7 +116,7 @@ cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/xducer/comfyui-gg-tools.git
 ```
 
-Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-gg-tools`, then restart and refresh. Tested with ComfyUI 0.37 and frontend 1.53; the nodes rely on the subgraph features of recent frontends.
+Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-gg-tools`, then restart and refresh. Tested with ComfyUI 0.37 to 0.43 and frontend 1.53 to 1.57; the nodes rely on the subgraph features of recent frontends.
 
 Workflows that use these nodes need the pack installed to open; exported API prompts don't.
 

@@ -124,6 +124,13 @@ class LoraMatrix extends LGraphNode {
     }
 
     // Outputs are left alone while a workflow loads; afterConfigureGraph syncs them once links exist.
+    // Frontend 1.57 reports the saved input links from configure(), before a paste restores the output wires,
+    // so syncing then dropped the clip outputs (and every wire from that slot on) on Ctrl+V.
+    configure(info) {
+        this.configuring = true;
+        try { super.configure(info); } finally { this.configuring = false; }
+    }
+
     onConfigure() { this.layout(); }
 
     onRemoved() { this.observer.disconnect(); }
@@ -316,6 +323,7 @@ class LoraMatrix extends LGraphNode {
     }
 
     onConnectionsChange(type, index) {
+        if (this.configuring) return;
         if (type === LiteGraph.INPUT && this.inputs[index]?.name === "clip") this.syncOutputs();
         // The group headers show which outputs are wired, and whether their input is connected.
         this.render();
