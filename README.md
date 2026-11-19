@@ -7,8 +7,9 @@ Frontend-only nodes for keeping large ComfyUI workflows tidy, switchable and eas
 | **Pipe To / Pipe From (ggtools)** | Send connections anywhere in the workflow, including into and out of subgraphs, without wires. |
 | **LoRA Multi-Stack (ggtools)** | Several LoRA stacks side by side from one LoRA list, each with its own model and clip outputs, for comparing LoRA combinations. |
 | **Crossroads Split / Join (ggtools)** | Choose by number which of several paths runs; the other paths are left out of the queue. Also switches optional inputs off. |
+| **Random Prompt Picker (ggtools)** | A random seed and a random line from each of your text lists, joined into one prompt. Freeze a list, the seed or everything to keep what the last run used. |
 
-All five are under **Add Node → ggtools**.
+All six are under **Add Node → ggtools**.
 
 ## Pipe To and Pipe From
 
@@ -107,6 +108,37 @@ Put the Split inside the subgraph and drag its `path` socket onto the subgraph's
 
 When you queue, the Split and Join are compiled out: the selected path is wired straight through and the other paths are removed. The path number must be known when you queue; a number computed by another node stops the queue with an error.
 
+## Random Prompt Picker
+
+![Random Prompt Picker fed by a Pipe From's clip and a text node reading "an old man on top of a car roof." It has a Camera list and a Situation list, a seed row and a preview of the joined text, all frozen. Its conditioning output goes to a KSampler's positive input and to a Conditioning Zero Out for the negative, its seed output goes to the KSampler's seed, and the image shows an old man sitting on a car roof with his arms folded.](assets/random_prompt_example_01.png)
+
+Each row is a **list**: a text file of entries, such as locations, outfits or poses. Each line of the file is one entry. An entry can be a single word or several sentences, as long as it stays on one line: a line break starts the next entry. Every run picks a new seed and one entry from each list, and the node shows what the run used.
+
+1. Put your lists in `ComfyUI/user/default/ggtools/lists` as `.txt` or `.md` files. Subfolders work, and empty lines are skipped.
+2. Add **Random Prompt Picker (ggtools)**, click **+ list** and choose a file. Repeat for each list.
+3. Connect `text` (the socket beside the preview) to your prompt, and `seed` to your sampler. Each list also has its own output at the end of its row.
+4. Optional: connect a `clip` to get a `conditioning` output under `text`, ready for a sampler's `positive`, so you can skip the CLIP Text Encode node. Connect existing prompt text to the `text` input to have it put in front of the random text.
+
+| Where | Click | Double-click | Right-click |
+| --- | --- | --- | --- |
+| List name | on/off: a list that is off is left out of the text | rename | rename, choose list, on/off, move up or down, remove |
+| Line | | type your own text, which freezes the row | |
+| ↻ on a row | pick another line now | | |
+| Lock on a row | freeze: the row keeps its line until you unfreeze it | | |
+| Seed | arrows: one up or down (or drag left/right) | type a seed | |
+
+- **Freeze** keeps what the last run used. The seed and the lists are locked separately. Lock a list to keep its line while the seed and the other lists change, lock the seed to keep the seed while the text changes, or use **freeze all** for both. **freeze all** shows ◪ when only some rows are frozen. With everything frozen, runs send the same text and seed, so ComfyUI reuses what it already made.
+- **Re-roll** picks a new seed and new lines now, except what is frozen. Every queued run does the same just before it starts.
+- The `seed` output is an ordinary whole number, like the one from ComfyUI's own seed fields, and connects to any sampler's `seed`.
+- Setting a seed yourself, by typing, the arrows or dragging, locks the seed and leaves the text alone. For another image from the same text, lock the lists and change the seed.
+- When a run rolls, the new seed also picks the lines. To get those lines back later, set the seed, then right-click the node and choose **Pick the lines of this seed**: it brings back the lines and freezes everything, as long as the list files haven't changed since. Each list gets its line from the seed and its own file name, so switching other lists on or off, or reordering them, doesn't change it.
+- An edited list file is read again at the next run. A workflow stores the picked lines, not the lists, so a frozen node still works where the files are missing.
+- **+ text** adds a row of your own text, such as the fixed part of a prompt. It is never rolled, and you can move it between the lists like any row.
+- The `text` input and `conditioning` apply to the joined `text` output; each list's own output carries just its entry. `conditioning` uses ComfyUI's standard CLIP Text Encode. For a model with its own encoder node, use the `text` output with that node.
+- Right-click the node for **Join lines with**: period, comma, space or new line. A period or comma takes the place of the punctuation an entry or the wired text already ends with, so none is doubled.
+
+When you queue, each wire from the node becomes the text or number itself, and the node never reaches the server. With the `text` input or `conditioning` in use, ComfyUI's own Concatenate Text and CLIP Text Encode take its place. A queue count above 1 rolls for every run.
+
 ## Install
 
 Search for **GG Tools** in ComfyUI Manager, or clone it:
@@ -118,11 +150,29 @@ git clone https://github.com/xducer/comfyui-gg-tools.git
 
 Restart ComfyUI and refresh the browser. To update, run `git pull --ff-only` in `custom_nodes/comfyui-gg-tools`, then restart and refresh. Tested with ComfyUI 0.37 to 0.43 and frontend 1.53 to 1.57; the nodes rely on the subgraph features of recent frontends.
 
-Workflows that use these nodes need the pack installed to open; exported API prompts don't.
+Workflows that use these nodes need the pack installed to open; exported API prompts don't. An exported prompt holds the Random Prompt Picker's text and seed as they were at export; it doesn't roll again.
 
 ## Notes
 
 - The nodes work in the browser; the queued prompt contains only ordinary nodes and links. **Export (API)** includes their effect, but an exported prompt does not change if you change the nodes afterwards, and prompts already queued are unaffected.
+
+## What's new
+
+**0.5.0**
+- New Random Prompt Picker: a random seed and random lines from your text lists, with freeze per list.
+- Fixed: a Pipe To fed by a Crossroads Join named the entry `j0`, `j1` instead of `image`, `mask`.
+
+**0.4.2**
+- Fixed: a workflow with a Crossroads Split failed to load from a saved image ("Loading aborted … reading 'widget'").
+
+**0.4.1**
+- Fixed: with frontend 1.57, a LoRA Multi-Stack pasted with Ctrl+V lost its clip outputs and wires.
+
+**0.4.0**
+- New Crossroads Split and Join. Boolean Fast Muter is removed; Crossroads replaces it.
+- LoRA Multi-Stack rows can be reordered.
+
+Earlier versions: see [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

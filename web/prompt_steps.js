@@ -2,20 +2,23 @@ import { app } from "../../../scripts/app.js";
 
 // The pack's nodes leave the queued prompt through these steps. The frontend loads the pack's scripts in parallel,
 // so one hook runs them in a fixed order however they load: the pipes first, so the later steps see the real
-// sources behind a Pipe From, then the LoRA Multi-Stack, then Crossroads, which cuts whole paths.
+// sources behind a Pipe From, then the LoRA Multi-Stack, then Crossroads, which cuts whole paths, then Random
+// Prompt, which turns the wires that are left into values.
 export const PIPES = 1;
 export const LORA_STACK = 2;
 export const CROSSROADS = 3;
+export const RANDOM = 4;
 
 const steps = [];
 
 // `compile(result, prepared)` returns the new graphToPrompt result; `prepare(graph)`, if given, runs before the
-// prompt is built and its return value is passed on.
+// prompt is built (it may be async) and its return value is passed on.
 export function addPromptStep(order, step) {
     if (!steps.length) {
         const graphToPrompt = app.graphToPrompt;
         app.graphToPrompt = async function (graph = this.rootGraph || this.graph, ...args) {
-            const prepared = steps.map(({ step }) => step.prepare?.(graph));
+            const prepared = [];
+            for (const { step } of steps) prepared.push(await step.prepare?.(graph));
             let result = await graphToPrompt.call(this, graph, ...args);
             steps.forEach(({ step }, i) => { result = step.compile(result, prepared[i]); });
             return result;
