@@ -215,6 +215,13 @@ class CrossroadsSplit extends LGraphNode {
         this.addInput(`v${this.crossroads.next++}`, "*", { label: "connect anything" });
     }
 
+    // The workflow stored in an image leaves out widget inputs that have no wire; `path` goes back in first place,
+    // as the frontend does for a node from a node definition.
+    configure(data) {
+        if (!data.inputs?.some((input) => input.name === "path")) data.inputs = [this.inputs.find((input) => input.name === "path"), ...(data.inputs ?? [])];
+        super.configure(data);
+    }
+
     // Pasting configures the node, then restores its wires in the same step; values left without a wire on
     // either side (a Split pasted without its sources) are tidied away once that is done.
     onConfigure() {
