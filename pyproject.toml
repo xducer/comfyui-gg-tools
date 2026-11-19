@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-gg-tools"
-version = "0.4.2"
-description = "Frontend-only ComfyUI nodes for tidy, switchable workflows: wireless Pipe To / Pipe From (also across subgraphs), a LoRA Multi-Stack for comparing LoRA combinations, and Crossroads Split / Join for choosing which path of a workflow runs."
+version = "0.5.0"
+description = "Frontend-only ComfyUI nodes for tidy, switchable workflows: wireless Pipe To / Pipe From (also across subgraphs), a LoRA Multi-Stack for comparing LoRA combinations, Crossroads Split / Join for choosing which path of a workflow runs, and a Random Prompt Picker for a random seed and random lines from your text lists."
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = []
