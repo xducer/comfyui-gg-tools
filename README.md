@@ -57,7 +57,7 @@ Each column is a **group**: its own LoRA stack, with its own `model` and `clip` 
 - Drag a strength left or right to adjust it. `0.80` sets model and clip; tick **clip strengths** to set them separately (stored as `0.80/0.50`). An empty cell, an off cell or `0` leaves the LoRA out of that group.
 - **+** adds a group copying the last one; **+ LoRA** adds a row. Drag a row's ⠿ grip up or down to reorder the LoRAs; each group applies them top to bottom. Removing a group or row can be undone from the footer until your next edit.
 - Dots after a group name show which of its outputs are wired; a ring means the matching input isn't connected.
-- Drag a group's socket plate onto another group to swap their model/clip wires (or move them, if that group has none). Undo in the footer reverts it.
+- To switch which group feeds the rest of your workflow, drag a group's socket plate onto another group. Their model/clip wires swap (or move, if that group has none), so whatever was connected to one group now gets the other, also through a Pipe To. Undo in the footer reverts it.
 - Hover anything for a short explanation above the table.
 - Copy and paste keeps the wires between the copied nodes. Ctrl+V leaves the pasted node's `model` and `clip` inputs empty, as ComfyUI does for any node; Ctrl+Shift+V keeps them connected.
 
