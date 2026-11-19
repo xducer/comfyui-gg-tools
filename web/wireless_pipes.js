@@ -68,7 +68,7 @@ function variableOf(node) {
 function entryName(node, output, type) {
     const fallback = Array.isArray(type) ? "combo" : type === "*" || type === 0 ? "any" : String(type).toLowerCase();
     const descriptive = (name) => typeof name === "string" && name.trim() && name.trim().toLowerCase() !== fallback &&
-        !/^(?:\*|any|output|out|value|entry|opt_connection|matchtype)(?:_\d+)?$/i.test(name.trim());
+        !/^(?:(?:\*|any|output|out|value|entry|opt_connection|matchtype)(?:_\d+)?|j\d+)$/i.test(name.trim());
     // The source's own name for the value: a named output, a Get/Set variable, or the type.
     const variable = variableOf(node);
     const own = [output?.label, output?.name].find(descriptive)?.trim() || variable || fallback;
